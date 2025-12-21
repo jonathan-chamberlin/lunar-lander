@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
+import pygame as pg
 
 warnings.filterwarnings("ignore")
 
@@ -36,6 +37,18 @@ customer1.send_sms()
 import gymnasium as gym
 
 # Try this and observe what happens
-env = gym.make("LunarLander-v3", render_mode="human")
 
-env.reset()
+
+running = True
+while running:
+    
+    env = gym.make("LunarLander-v3", render_mode="human")
+    
+    events = pygame.event.get()
+    for event in events:
+        if event == "something about quitting"
+    
+    env.render()
+    env.step()
+    
+    
