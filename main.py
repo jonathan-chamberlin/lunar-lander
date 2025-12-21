@@ -44,9 +44,10 @@ while running:
     
     env = gym.make("LunarLander-v3", render_mode="human")
     
-    events = pygame.event.get()
+    events = pg.event.get()
     for event in events:
-        if event == "something about quitting"
+        if event == "something about quitting":
+            exit
     
     env.render()
     env.step()
