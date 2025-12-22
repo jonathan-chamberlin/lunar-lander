@@ -35,7 +35,7 @@ customer1 = Customer("Jonathan", "jcham17x@gmail.com", 5426783357)
 customer1.send_sms()
 
 import gymnasium as gym
-
+pg.init()
 # Try this and observe what happens
 
 
@@ -46,10 +46,14 @@ while running:
     
     events = pg.event.get()
     for event in events:
-        if event == "something about quitting":
-            exit
+        if event.type == 256:
+            running = False
+            env.close()
     
+    print(f"Event type: {event.type}")
+    print(f"Event object: {event}")
+    env.reset()
     env.render()
-    env.step()
+    
     
     
