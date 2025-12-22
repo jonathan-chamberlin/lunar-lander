@@ -14,8 +14,16 @@ warnings.filterwarnings("ignore")
 pg.init()
 # Try this and observe what happens
 
-env = gym.make("LunarLander-v3", render_mode="human")
+env = gym.make("LunarLanderContinuous-v3", render_mode="human")
 env.reset()
+
+
+print("Action space:", env.action_space)
+print("Action space shape:", env.action_space.shape)
+print("Action space low:", env.action_space.low)
+print("Action space high:", env.action_space.high)
+print("Sample random action:", env.action_space.sample())
+
 running = True
 while running:    
     events = pg.event.get()
@@ -23,6 +31,7 @@ while running:
         if event.type == 256:
             env.close()
             running = False
+    
     # print(f"Event type: {event.type}")
     # print(f"Event object: {event}")
     
