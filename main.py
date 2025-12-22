@@ -21,8 +21,8 @@ while running:
     events = pg.event.get()
     for event in events:
         if event.type == 256:
-            running = False
             env.close()
+            running = False
     # print(f"Event type: {event.type}")
     # print(f"Event object: {event}")
     
