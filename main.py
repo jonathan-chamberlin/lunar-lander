@@ -34,10 +34,11 @@ print("Sample random action:", env.action_space.sample())
 
 
 
-reward_list = []
-runs = 3
+
+runs = 5
 
 for run in range(0,runs):
+    reward_list = []
     running = True
     while running:    
         events = pg.event.get()
@@ -74,4 +75,5 @@ for run in range(0,runs):
 
 
     # print(reward_list)
-    print(f"Length of reward_list: {len(reward_list)}")
+    print(np.sum(reward_list))
+    # print(f"Length of reward_list: {len(reward_list)}")
