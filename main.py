@@ -34,7 +34,7 @@ while running:
             running = False
     
     action = env.action_space.sample()
-    env.step(action)
+    action_calculations = env.step(action)
     
     # sleep for framerate
     
