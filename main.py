@@ -12,17 +12,22 @@ import pygame as pg
 import gymnasium as gym
 warnings.filterwarnings("ignore")
 pg.init()
-# Try this and observe what happens
 
 env = gym.make("LunarLanderContinuous-v3", render_mode="human")
-env.reset()
+initial_observation = env.reset()[0]
+
+print(f"Initial Observation: {initial_observation}")
 
 
+
+
+'''
 print("Action space:", env.action_space)
 print("Action space shape:", env.action_space.shape)
 print("Action space low:", env.action_space.low)
 print("Action space high:", env.action_space.high)
 print("Sample random action:", env.action_space.sample())
+'''
 
 reward_list = []
 
@@ -61,5 +66,5 @@ while running:
     # sleep for framerate
 
 
-print(reward_list)
+# print(reward_list)
 print(f"Length of reward_list: {len(reward_list)}")
