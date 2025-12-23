@@ -24,6 +24,9 @@ print("Action space low:", env.action_space.low)
 print("Action space high:", env.action_space.high)
 print("Sample random action:", env.action_space.sample())
 
+reward_list = []
+
+
 running = True
 while running:    
     events = pg.event.get()
@@ -42,11 +45,13 @@ while running:
     truncated = action_calculations[3]
     info = action_calculations[4]
     
-    print("=" * 10)
-    print(f"Observation: {observation}")
-    print(f"Reward: {reward}")
-    print(f"Terminated: {terminated}")
-    print(f"Truncated: {truncated}")
+    reward_list.append(float(reward))
+    
+    # print("=" * 10)
+    # print(f"Observation: {observation}")
+    # print(f"Reward: {reward}")
+    # print(f"Terminated: {terminated}")
+    # print(f"Truncated: {truncated}")
     
     if terminated == True:
             running = False
@@ -54,8 +59,7 @@ while running:
     # print(f"Info: {info}")
     
     # sleep for framerate
-    
 
-    
-    
-    
+
+print(reward_list)
+print(f"Length of reward_list: {len(reward_list)}")
