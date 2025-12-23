@@ -30,12 +30,12 @@ print("Sample random action:", env.action_space.sample())
 '''
 
 
-class ActorNetwork()
+# class ActorNetwork()
 
 
 
 reward_list = []
-runs = 2
+runs = 3
 
 for run in range(0,runs):
     running = True
