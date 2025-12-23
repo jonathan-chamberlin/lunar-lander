@@ -36,6 +36,23 @@ while running:
     action = env.action_space.sample()
     action_calculations = env.step(action)
     
+    observation = action_calculations[0]
+    reward = action_calculations[1]
+    terminated = action_calculations[2]
+    truncated = action_calculations[3]
+    info = action_calculations[4]
+    
+    print("=" * 10)
+    print(f"Observation: {observation}")
+    print(f"Reward: {reward}")
+    print(f"Terminated: {terminated}")
+    print(f"Truncated: {truncated}")
+    
+    if terminated == True:
+            running = False
+    
+    # print(f"Info: {info}")
+    
     # sleep for framerate
     
 
