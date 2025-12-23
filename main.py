@@ -30,41 +30,45 @@ print("Sample random action:", env.action_space.sample())
 '''
 
 reward_list = []
+runs = 2
+# Make it so, for run in runs, while running == True, advance simulation
 
 
-running = True
-while running:    
-    events = pg.event.get()
-    
-    for event in events:
-        if event.type == 256:
-            env.close()
-            running = False
-    
-    action = env.action_space.sample()
-    action_calculations = env.step(action)
-    
-    observation = action_calculations[0]
-    reward = action_calculations[1]
-    terminated = action_calculations[2]
-    truncated = action_calculations[3]
-    info = action_calculations[4]
-    
-    reward_list.append(float(reward))
-    
-    # print("=" * 10)
-    # print(f"Observation: {observation}")
-    # print(f"Reward: {reward}")
-    # print(f"Terminated: {terminated}")
-    # print(f"Truncated: {truncated}")
-    
-    if terminated == True:
-            running = False
-    
-    # print(f"Info: {info}")
-    
-    # sleep for framerate
+for run in range(0,runs):
+    running = True
+    while running:    
+        events = pg.event.get()
+        
+        for event in events:
+            if event.type == 256:
+                env.close()
+                running = False
+        
+        action = env.action_space.sample()
+        action_calculations = env.step(action)
+        
+        observation = action_calculations[0]
+        reward = action_calculations[1]
+        terminated = action_calculations[2]
+        truncated = action_calculations[3]
+        info = action_calculations[4]
+        
+        reward_list.append(float(reward))
+        
+        # print("=" * 10)
+        # print(f"Observation: {observation}")
+        # print(f"Reward: {reward}")
+        # print(f"Terminated: {terminated}")
+        # print(f"Truncated: {truncated}")
+        
+        if terminated == True:
+                env.reset()
+                running = False
+        
+        # print(f"Info: {info}")
+        
+        # sleep for framerate
 
 
-# print(reward_list)
-print(f"Length of reward_list: {len(reward_list)}")
+    # print(reward_list)
+    print(f"Length of reward_list: {len(reward_list)}")
