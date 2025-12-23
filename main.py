@@ -29,10 +29,13 @@ print("Action space high:", env.action_space.high)
 print("Sample random action:", env.action_space.sample())
 '''
 
+
+class ActorNetwork()
+
+
+
 reward_list = []
 runs = 2
-# Make it so, for run in runs, while running == True, advance simulation
-
 
 for run in range(0,runs):
     running = True
