@@ -27,14 +27,18 @@ print("Sample random action:", env.action_space.sample())
 running = True
 while running:    
     events = pg.event.get()
+    
     for event in events:
         if event.type == 256:
             env.close()
             running = False
     
-    # print(f"Event type: {event.type}")
-    # print(f"Event object: {event}")
+    action = env.action_space.sample()
+    env.step(action)
     
+    # sleep for framerate
+    
+
     
     
     
