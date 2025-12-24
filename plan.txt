@@ -1,3 +1,18 @@
+(DONE) Now use this prompt and also paste in the toggle heading below: I was trying to follow the youtube tutorial but the guy sped through stuff and i didn’t understand why he was doing what he was doing, so i need your help walking me through each step so i understand this and learn this new skill of reinforcement learning on a continuous environment. Here is the project description from the youtube video i want to build
+- project description from youtube video
+    
+    In this tutorial we will code a deep deterministic policy gradient (DDPG) agent in Pytorch, to beat the continuous lunar lander environment.
+    
+    DDPG combines the best of Deep Q Learning and Actor Critic Methods into an algorithm that can solve environments with continuous action spaces. We will have an actor network that learns the (deterministic) policy, coupled with a critic network to learn the action-value functions. We will make use of a replay buffer to maximize sample efficiency, as well as target networks to assist in algorithm convergence and stability.
+    
+    To deal with the explore exploit dilemma, we will introduce noise into the agent's action choice function. This noise is the Ornstein Uhlenbeck noise that models temporal correlations of brownian motion.
+    
+    Keep in mind that the performance you see is from an agent that is still in training mode, i.e. it still has some noise in its action. A fully trained agent in evaluation mode will perform even better. You can fix this up in the code by adding a parameter to the choose action function, and omitting the noise if you pass in a variable to indicate you are in evaluation mode.
+    
+- (DONE)Read this claude plan overview from the most recent response and answer each question: https://claude.ai/chat/baebe5cc-226c-4d00-b55c-42542815f019
+- (DONE)  Install claude code: https://code.claude.com/docs/en/overview
+
+
 Rewatch this video about actor critic network: https://www.youtube.com/watch?v=oydExwuuUCw
 
 Based on that video, ask claude if it makes more sense to create a function or class for each network. To me with my limited knowledge about the uses of classes it seems like functions would be better, where all parameters for each are passed as argurments.
