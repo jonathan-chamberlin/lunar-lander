@@ -35,8 +35,31 @@ print("Sample random action:", env.action_space.sample())
 
 
 
-runs = 5
+# network class psuedocode
+"""
 
+class network(nn.Module):
+    def init(self, input_size, output_size):
+        super().init()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.layer1 = something to make layer with input_size inputs
+        self.layer2 = something to make layer with output_size outputs
+
+    def forward(self, state):
+        ... something computing actions based on self.layer1 and self.layer2
+        return self.action
+
+lunar_network = network(8,2)
+
+for i in range(0,100): lunar_network() lunar_network.optimizer.step()
+
+"
+
+"""
+
+# Game loop
+runs = 5
 for run in range(0,runs):
     reward_list = []
     running = True
@@ -77,3 +100,4 @@ for run in range(0,runs):
     # print(reward_list)
     print(np.sum(reward_list))
     # print(f"Length of reward_list: {len(reward_list)}")
+
