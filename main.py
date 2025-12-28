@@ -13,7 +13,7 @@ import gymnasium as gym
 warnings.filterwarnings("ignore")
 pg.init()
 
-framerate = 240
+framerate = 600
 
 runs = 300
 runs_to_render = [0,3,4]
