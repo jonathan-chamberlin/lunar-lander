@@ -17,20 +17,16 @@ gamma = 0.99
 
 env = gym.make("LunarLanderContinuous-v3", render_mode="human")
 initial_observation = env.reset()[0]
-state = env.reset()[0][0]
+state = T.from_numpy(env.reset()[0])
 
-# print(f"Initial Observation: {initial_observation}")
+print(f"Initial Observation: {initial_observation}")
 
-'''
+
 print("Action space:", env.action_space)
 print("Action space shape:", env.action_space.shape)
 print("Action space low:", env.action_space.low)
 print("Action space high:", env.action_space.high)
 print("Sample random action:", env.action_space.sample())
-'''
-
-# network class psuedocode
-
 class actor_network(nn.Module):
     def __init__(self, input_size, output_size):
         super().__init__()
@@ -58,7 +54,7 @@ lunar_actor = actor_network(8,2)
 lunar_critic = critic_network(8,2)
 
 actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
-critic_optimizer = optim.Adam(lunar_ctiric.parameters(), lr=0.001)
+critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
 
 # Game loop
 runs = 1
@@ -74,27 +70,32 @@ for run in range(0,runs):
                 running = False
         
         action = lunar_actor(state)
-        action_calculations = env.step(action)
+        action_calculations = env.step(action.detach().numpy())
         
-        next_state = action_calculations[0]
+        next_state = T.from_numpy(action_calculations[0])
         reward = action_calculations[1]
         terminated = action_calculations[2]
         truncated = action_calculations[3]
         info = action_calculations[4]
         
-        q_value = lunar_critic(state,action)
-        actor_optimizer.zero_grad()
-        actor_loss = -q_value
+        q_value_for_actor = lunar_critic(state,action)
+        
+
+        actor_loss = -q_value_for_actor
         actor_optimizer.zero_grad()
         actor_loss.backward()
         actor_optimizer.step()
         
+        q_value_for_critic = lunar_critic(state,action.detach())
         next_action = lunar_actor(next_state)
         target = reward + gamma * lunar_critic(next_state,next_action) #bellman
-        critic_loss = q_value - target
+        critic_loss = target - q_value_for_critic
+        
         critic_optimizer.zero_grad()
         critic_loss.backward()
         critic_optimizer.step()
+        
+        state = next_state
         
         reward_list.append(float(reward))
         
