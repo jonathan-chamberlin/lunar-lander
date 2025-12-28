@@ -15,9 +15,10 @@ pg.init()
 
 gamma = 0.99
 
-env = gym.make("LunarLanderContinuous-v3", render_mode="human")
-initial_observation = env.reset()[0]
-state = T.from_numpy(env.reset()[0])
+training_env = gym.make("LunarLanderContinuous-v3", render_mode="human")
+render_env = gym.make("LunarLanderContinuous-v3", render_mode=None)
+initial_observation = training_env.reset()[0]
+state = T.from_numpy(training_env.reset()[0])
 
 # print(f"Initial Observation: {initial_observation}")
 
@@ -60,6 +61,11 @@ critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
 # Game loop
 runs = 50
 for run in range(0,runs):
+    
+    train_obs, _ = training_env.reset()
+    render_obs, _ = render_env.reset()
+    state = T.from_numpy(train_obs)
+    
     reward_list = []
     running = True
     while running:    
@@ -67,13 +73,17 @@ for run in range(0,runs):
         
         for event in events:
             if event.type == 256:
-                env.close()
+                training_env.close()
+                render_env.close()
                 running = False
         print("=" *10)
         print(f"Run {run}")
         
+        if run % 10 == 0 and render_env.render_mode == "human":
+            render_env.render()
+        
         action = lunar_actor(state)
-        action_calculations = env.step(action.detach().numpy())
+        action_calculations = training_env.step(action.detach().numpy())
         
         print(f"Action: {action}")
         
@@ -112,7 +122,8 @@ for run in range(0,runs):
         # print(f"Truncated: {truncated}")
         
         if terminated == True:
-                env.reset()
+                training_env.reset()
+                render_env.reset()
                 running = False
         
         # print(f"Info: {info}")
