@@ -22,3 +22,5 @@
 Make it so I can render every 10th run
 
 Make it so I can render an arbitrary list of runs_to_render
+
+Make it so the simulation actually can get successful landings, because although it's now descending upright, it is not printing the SUCCESS message.

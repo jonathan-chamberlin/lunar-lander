@@ -66,6 +66,7 @@ actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
 critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
 
 total_reward_for_alls_runs = []
+successes_list =[]
 
 # Game loop
 
@@ -88,6 +89,7 @@ for run in range(0,runs):
                 render_env.close()
                 print("=" * 50)
                 print(f"total_reward_for_alls_runs: {total_reward_for_alls_runs}")
+                print(f"successes_list: {successes_list}")
                 running = False
         # print("=" *10)
         # print(f"Run {run}")
@@ -137,6 +139,7 @@ for run in range(0,runs):
         
         if terminated == True:
             if "success" in info:
+                successes_list.append[run]
                 print("SUCCESS")
             else:
                 print("FAILURE")
@@ -149,4 +152,6 @@ for run in range(0,runs):
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
+
+
 
