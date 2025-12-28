@@ -19,14 +19,15 @@ env = gym.make("LunarLanderContinuous-v3", render_mode="human")
 initial_observation = env.reset()[0]
 state = T.from_numpy(env.reset()[0])
 
-print(f"Initial Observation: {initial_observation}")
+# print(f"Initial Observation: {initial_observation}")
 
-
+'''
 print("Action space:", env.action_space)
 print("Action space shape:", env.action_space.shape)
 print("Action space low:", env.action_space.low)
 print("Action space high:", env.action_space.high)
 print("Sample random action:", env.action_space.sample())
+'''
 class actor_network(nn.Module):
     def __init__(self, input_size, output_size):
         super().__init__()
