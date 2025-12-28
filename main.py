@@ -13,13 +13,13 @@ import gymnasium as gym
 warnings.filterwarnings("ignore")
 pg.init()
 
+gamma = 0.99
+
 env = gym.make("LunarLanderContinuous-v3", render_mode="human")
 initial_observation = env.reset()[0]
+state = env.reset()[0][0]
 
-print(f"Initial Observation: {initial_observation}")
-
-
-
+# print(f"Initial Observation: {initial_observation}")
 
 '''
 print("Action space:", env.action_space)
@@ -29,37 +29,39 @@ print("Action space high:", env.action_space.high)
 print("Sample random action:", env.action_space.sample())
 '''
 
-
-# class ActorNetwork()
-
-
-
-
 # network class psuedocode
-"""
 
-class network(nn.Module):
-    def init(self, input_size, output_size):
-        super().init()
-        self.input_size = input_size
-        self.output_size = output_size
-        self.layer1 = something to make layer with input_size inputs
-        self.layer2 = something to make layer with output_size outputs
+class actor_network(nn.Module):
+    def __init__(self, input_size, output_size):
+        super().__init__()
+        self.layer1 = nn.Linear(input_size,256)
+        self.layer2 = nn.Linear(256,output_size)
 
-    def forward(self, state):
-        ... something computing actions based on self.layer1 and self.layer2
-        return self.action
+    def forward(self, state: T.tensor):
+        action = T.tanh(self.layer2(F.relu(self.layer1(state)))) #the F.relu and T.tanh is the hyperbolic tangent to make this network non-linear, and to bound the tensor to values -1 to 1.
+        return action
 
-lunar_network = network(8,2)
+class critic_network(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super().__init__()
+        input_dim = state_dim + action_dim
+        self.layer1 = nn.Linear(input_dim,256)
+        self.layer2 = nn.Linear(256,1) #outputs a single q value
+        
+    def forward(self,state,action):
+        combined = T.cat([state,action], dim=-1)
+        q_value = self.layer2(F.relu(self.layer1(combined)))
+        return q_value
+        
 
-for i in range(0,100): lunar_network() lunar_network.optimizer.step()
+lunar_actor = actor_network(8,2)
+lunar_critic = critic_network(8,2)
 
-"
-
-"""
+actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
+critic_optimizer = optim.Adam(lunar_ctiric.parameters(), lr=0.001)
 
 # Game loop
-runs = 5
+runs = 1
 for run in range(0,runs):
     reward_list = []
     running = True
@@ -71,14 +73,28 @@ for run in range(0,runs):
                 env.close()
                 running = False
         
-        action = env.action_space.sample()
+        action = lunar_actor(state)
         action_calculations = env.step(action)
         
-        observation = action_calculations[0]
+        next_state = action_calculations[0]
         reward = action_calculations[1]
         terminated = action_calculations[2]
         truncated = action_calculations[3]
         info = action_calculations[4]
+        
+        q_value = lunar_critic(state,action)
+        actor_optimizer.zero_grad()
+        actor_loss = -q_value
+        actor_optimizer.zero_grad()
+        actor_loss.backward()
+        actor_optimizer.step()
+        
+        next_action = lunar_actor(next_state)
+        target = reward + gamma * lunar_critic(next_state,next_action) #bellman
+        critic_loss = q_value - target
+        critic_optimizer.zero_grad()
+        critic_loss.backward()
+        critic_optimizer.step()
         
         reward_list.append(float(reward))
         
@@ -93,10 +109,8 @@ for run in range(0,runs):
                 running = False
         
         # print(f"Info: {info}")
-        
         # sleep for framerate
-
-
+        
     # print(reward_list)
     print(np.sum(reward_list))
     # print(f"Length of reward_list: {len(reward_list)}")
