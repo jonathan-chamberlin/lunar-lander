@@ -15,7 +15,7 @@ pg.init()
 
 framerate = 600
 
-runs = 300
+runs = 500
 runs_to_render = [0,3,4]
 gamma = 0.99
 
@@ -99,6 +99,7 @@ for run in range(0,runs):
         
         action = lunar_actor(state)
         action_calculations = training_env.step(action.detach().numpy())
+
         
         # print(f"Action: {action}")
         
@@ -137,9 +138,11 @@ for run in range(0,runs):
         # print(f"Terminated: {terminated}")
         # print(f"Truncated: {truncated}")
         
+        total_reward_for_one_run = float(np.sum(reward_list_for_run))
+        
         if terminated == True:
-            if "success" in info:
-                successes_list.append[run]
+            if total_reward_for_one_run >= 200:
+                successes_list.append(run)
                 print("SUCCESS")
             else:
                 print("FAILURE")
@@ -147,7 +150,7 @@ for run in range(0,runs):
             render_env.reset()
             running = False
         
-        total_reward_for_one_run = float(np.sum(reward_list_for_run))
+        
         
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
