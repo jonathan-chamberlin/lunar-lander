@@ -13,6 +13,9 @@ import gymnasium as gym
 warnings.filterwarnings("ignore")
 pg.init()
 
+framerate = 240
+
+runs = 300
 runs_to_render = [0,3,4]
 gamma = 0.99
 
@@ -20,6 +23,9 @@ training_env = gym.make("LunarLanderContinuous-v3", render_mode="human")
 render_env = gym.make("LunarLanderContinuous-v3", render_mode=None)
 initial_observation = training_env.reset()[0]
 state = T.from_numpy(training_env.reset()[0])
+
+training_env.metadata["render_fps"] = framerate
+render_env.metadata["render_fps"] = framerate
 
 # print(f"Initial Observation: {initial_observation}")
 
@@ -59,15 +65,17 @@ lunar_critic = critic_network(8,2)
 actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
 critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
 
+total_reward_for_each_run = []
+
 # Game loop
-runs = 50
+
 for run in range(0,runs):
     
     train_obs, _ = training_env.reset()
     render_obs, _ = render_env.reset()
     state = T.from_numpy(train_obs)
     
-    reward_list = []
+    reward_list_for_run = []
     running = True
     while running:    
         events = pg.event.get()
@@ -114,7 +122,7 @@ for run in range(0,runs):
         
         state = next_state
         
-        reward_list.append(float(reward))
+        reward_list_for_run.append(float(reward))
         
         # print("=" * 10)
         # print(f"Observation: {observation}")
@@ -127,10 +135,13 @@ for run in range(0,runs):
                 render_env.reset()
                 running = False
         
-        # print(f"Info: {info}")
-        # sleep for framerate
+        total_reward_for_one_run = float(np.sum(reward_list_for_run))
         
-    # print(reward_list)
-    print(np.sum(reward_list))
-    # print(f"Length of reward_list: {len(reward_list)}")
+        print(f"Reward: {total_reward_for_one_run}")
+        
+        # sleep for framerate
+    
+    total_reward_for_each_run.append(total_reward_for_one_run)
 
+print("=" * 50)
+print(f"total_reward_for_each_run: {total_reward_for_each_run}")
