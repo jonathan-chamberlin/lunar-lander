@@ -24,3 +24,7 @@ Make it so I can render every 10th run
 Make it so I can render an arbitrary list of runs_to_render
 
 Make it so the simulation actually can get successful landings, because although it's now descending upright, it is not printing the SUCCESS message.
+
+The lander seems ot be tipping over a lot more, so i need to investigate why. Paste codebase into claude to ask why.
+
+Find out how to benchmark training time so i can compare how much i sped up my code by (https://gymnasium.farama.org/introduction/speed_up_env/)
