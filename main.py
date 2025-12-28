@@ -58,7 +58,7 @@ actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
 critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
 
 # Game loop
-runs = 20
+runs = 50
 for run in range(0,runs):
     reward_list = []
     running = True
