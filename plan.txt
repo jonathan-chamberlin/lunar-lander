@@ -17,4 +17,8 @@
 
 (DONE) Based on that video, ask claude if it makes more sense to create a function or class for each network. To me with my limited knowledge about the uses of classes it seems like functions would be better, where all parameters for each are passed as argurments.
 
-- LEFT OFF. Read my most recent message in my claude convo on browser. Then look at my psuedocode on @main.py, because that's my best understanding of how to actually implement this code
+(DONE) Read my most recent message in my claude convo on browser. Then look at my psuedocode on @main.py, because that's my best understanding of how to actually implement this code
+
+Make it so I can render every 10th run
+
+Make it so I can render an arbitrary list of runs_to_render

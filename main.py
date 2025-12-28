@@ -13,6 +13,7 @@ import gymnasium as gym
 warnings.filterwarnings("ignore")
 pg.init()
 
+runs_to_render = [0,3,4]
 gamma = 0.99
 
 training_env = gym.make("LunarLanderContinuous-v3", render_mode="human")
@@ -79,7 +80,7 @@ for run in range(0,runs):
         print("=" *10)
         print(f"Run {run}")
         
-        if run % 10 == 0 and render_env.render_mode == "human":
+        if (run in runs_to_render) and render_env.render_mode == "human":
             render_env.render()
         
         action = lunar_actor(state)
