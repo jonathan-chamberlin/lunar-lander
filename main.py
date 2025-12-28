@@ -58,7 +58,7 @@ actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
 critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
 
 # Game loop
-runs = 1
+runs = 20
 for run in range(0,runs):
     reward_list = []
     running = True
@@ -69,9 +69,13 @@ for run in range(0,runs):
             if event.type == 256:
                 env.close()
                 running = False
+        print("=" *10)
+        print(f"Run {run}")
         
         action = lunar_actor(state)
         action_calculations = env.step(action.detach().numpy())
+        
+        print(f"Action: {action}")
         
         next_state = T.from_numpy(action_calculations[0])
         reward = action_calculations[1]
@@ -80,9 +84,9 @@ for run in range(0,runs):
         info = action_calculations[4]
         
         q_value_for_actor = lunar_critic(state,action)
-        
 
         actor_loss = -q_value_for_actor
+        print(f"actor_loss: {actor_loss[0]}")
         actor_optimizer.zero_grad()
         actor_loss.backward()
         actor_optimizer.step()
@@ -91,6 +95,7 @@ for run in range(0,runs):
         next_action = lunar_actor(next_state)
         target = reward + gamma * lunar_critic(next_state,next_action) #bellman
         critic_loss = target - q_value_for_critic
+        print(f"Critic Loss: {critic_loss[0]}")
         
         critic_optimizer.zero_grad()
         critic_loss.backward()
