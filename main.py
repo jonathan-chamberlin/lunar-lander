@@ -65,7 +65,7 @@ lunar_critic = critic_network(8,2)
 actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
 critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
 
-total_reward_for_each_run = []
+total_reward_for_alls_runs = []
 
 # Game loop
 
@@ -77,6 +77,8 @@ for run in range(0,runs):
     
     reward_list_for_run = []
     running = True
+    print(f"Run {run}")
+    
     while running:    
         events = pg.event.get()
         
@@ -84,9 +86,11 @@ for run in range(0,runs):
             if event.type == 256:
                 training_env.close()
                 render_env.close()
+                print("=" * 50)
+                print(f"total_reward_for_alls_runs: {total_reward_for_alls_runs}")
                 running = False
-        print("=" *10)
-        print(f"Run {run}")
+        # print("=" *10)
+        # print(f"Run {run}")
         
         if (run in runs_to_render) and render_env.render_mode == "human":
             render_env.render()
@@ -94,7 +98,7 @@ for run in range(0,runs):
         action = lunar_actor(state)
         action_calculations = training_env.step(action.detach().numpy())
         
-        print(f"Action: {action}")
+        # print(f"Action: {action}")
         
         next_state = T.from_numpy(action_calculations[0])
         reward = action_calculations[1]
@@ -105,7 +109,7 @@ for run in range(0,runs):
         q_value_for_actor = lunar_critic(state,action)
 
         actor_loss = -q_value_for_actor
-        print(f"actor_loss: {actor_loss[0]}")
+        # print(f"actor_loss: {actor_loss[0]}")
         actor_optimizer.zero_grad()
         actor_loss.backward()
         actor_optimizer.step()
@@ -114,7 +118,7 @@ for run in range(0,runs):
         next_action = lunar_actor(next_state)
         target = reward + gamma * lunar_critic(next_state,next_action) #bellman
         critic_loss = target - q_value_for_critic
-        print(f"Critic Loss: {critic_loss[0]}")
+        # print(f"Critic Loss: {critic_loss[0]}")
         
         critic_optimizer.zero_grad()
         critic_loss.backward()
@@ -136,12 +140,7 @@ for run in range(0,runs):
                 running = False
         
         total_reward_for_one_run = float(np.sum(reward_list_for_run))
-        
-        print(f"Reward: {total_reward_for_one_run}")
-        
-        # sleep for framerate
     
-    total_reward_for_each_run.append(total_reward_for_one_run)
+    print(f"total_reward_for_one_run: {total_reward_for_one_run}")
+    total_reward_for_alls_runs.append(total_reward_for_one_run)
 
-print("=" * 50)
-print(f"total_reward_for_each_run: {total_reward_for_each_run}")
