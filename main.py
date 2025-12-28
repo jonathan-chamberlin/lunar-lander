@@ -106,7 +106,7 @@ for run in range(0,runs):
         truncated = action_calculations[3]
         info = action_calculations[4]
         
-        q_value_for_actor = lunar_critic(state,action)
+        q_value_for_actor = lunar_critic(state,action).mean()
 
         actor_loss = -q_value_for_actor
         # print(f"actor_loss: {actor_loss[0]}")
@@ -115,9 +115,10 @@ for run in range(0,runs):
         actor_optimizer.step()
         
         q_value_for_critic = lunar_critic(state,action.detach())
-        next_action = lunar_actor(next_state)
-        target = reward + gamma * lunar_critic(next_state,next_action) #bellman
-        critic_loss = target - q_value_for_critic
+        with T.no_grad():
+            next_action = lunar_actor(next_state)
+            target = reward + gamma * lunar_critic(next_state,next_action) #bellman
+        critic_loss = F.mse_loss(q_value_for_critic,target.detach())
         # print(f"Critic Loss: {critic_loss[0]}")
         
         critic_optimizer.zero_grad()
@@ -135,11 +136,16 @@ for run in range(0,runs):
         # print(f"Truncated: {truncated}")
         
         if terminated == True:
-                training_env.reset()
-                render_env.reset()
-                running = False
+            if "success" in info:
+                print("SUCCESS")
+            else:
+                print("FAILURE")
+            training_env.reset()
+            render_env.reset()
+            running = False
         
         total_reward_for_one_run = float(np.sum(reward_list_for_run))
+        
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
