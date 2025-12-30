@@ -72,6 +72,7 @@ successes_list =[]
 
 for run in range(0,runs):
     
+    #PSUEDOCODE for making it so only certain run indexes are rendered:
     # if we want to render the run:
         #if previous run wasn't rendered:
             #destroy training environment
