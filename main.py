@@ -72,6 +72,15 @@ successes_list =[]
 
 for run in range(0,runs):
     
+    # if we want to render the run:
+        #if previous run wasn't rendered:
+            #destroy training environment
+        #use rendering environement
+    # if we don't want to render the run
+        #if previous run was rendered:
+            #destroy rendering environment
+        #use non-rendering environment
+    
     train_obs, _ = training_env.reset()
     render_obs, _ = render_env.reset()
     state = T.from_numpy(train_obs)
@@ -80,7 +89,7 @@ for run in range(0,runs):
     running = True
     print(f"Run {run}")
     
-    while running:    
+    while running:  
         events = pg.event.get()
         
         for event in events:
@@ -93,9 +102,6 @@ for run in range(0,runs):
                 running = False
         # print("=" *10)
         # print(f"Run {run}")
-        
-        if (run in runs_to_render) and render_env.render_mode == "human":
-            render_env.render()
         
         action = lunar_actor(state)
         action_calculations = training_env.step(action.detach().numpy())
