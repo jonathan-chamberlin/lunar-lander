@@ -21,7 +21,9 @@
 
 (IN PROGRESS) Make it so the simulation actually can get successful landings, because although it's now descending upright, it is not printing the SUCCESS message.
 
-make it so the action includes some OUActionNoise
+(DONE) make it so the action includes some OUActionNoise
+
+Read most recent claude prompt and respons
 
 Make it so I can render every 10th run
 
