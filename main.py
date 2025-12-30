@@ -19,6 +19,13 @@ runs = 500
 runs_to_render = [0,3,4]
 gamma = 0.99
 
+mu = [0,0]
+sigma = 0.1
+theta = 0.2
+dt = 0.01
+x0 = None
+action_dimensions = 2
+
 training_env = gym.make("LunarLanderContinuous-v3", render_mode="human")
 render_env = gym.make("LunarLanderContinuous-v3", render_mode=None)
 initial_observation = training_env.reset()[0]
@@ -53,18 +60,27 @@ class OUActionNoise():
         self.dt=dt
         self.x0 = x0
         self.action_dimensions = action_dimensions
+        
         if isinstance(mu, int):
-            self.mu = mu*np.ones(action_dimensions)
+            self.mu = np.array(mu*np.ones(action_dimensions))
         else:
-            self.mu = mu
+            self.mu = np.array(mu)
+        
+        if x0 is None:
+            self.noise = self.mu
+        else:
+            self.noise = x0.np.ones(action_dimensions)
         self.reset()
     
     def reset(self):
-        self.noise = self.mu if self.x0 is None else self.x0
+        # might need to implement this but make it so that self.noise is the same dimensions as action:
+        # self.noise = self.mu if self.x0 is None else self.x0
+        return 0
     
     def generate_noise(self):
-        self.noise = self.noise + self.theta * (self.mu - self.noise) * self.dt + self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.action_dimensions)
-        return self.noise
+        for dimension in range(action_dimensions):
+            self.noise[dimension] =self.noise[dimension] + self.theta * (self.mu[dimension] - self.noise[dimension]) * self.dt + self.sigma * np.sqrt(self.dt) * np.random.normal(size=1)
+        return T.from_numpy(self.noise)
 
 class critic_network(nn.Module):
     def __init__(self, state_dim, action_dim):
@@ -124,8 +140,12 @@ for run in range(0,runs):
         # print("=" *10)
         # print(f"Run {run}")
         
-        action = lunar_actor(state)
-        action_calculations = training_env.step(action.detach().numpy())
+        lunar_noise = OUActionNoise(mu,sigma,theta,dt,x0,action_dimensions)
+        noise = lunar_noise.generate_noise()
+        action_without_noise = lunar_actor(state)
+        print(f"noise: {noise}")
+        noisy_action = action_without_noise + noise
+        action_calculations = training_env.step(noisy_action.detach().numpy())
 
         
         # print(f"Action: {action}")
@@ -136,7 +156,7 @@ for run in range(0,runs):
         truncated = action_calculations[3]
         info = action_calculations[4]
         
-        q_value_for_actor = lunar_critic(state,action).mean()
+        q_value_for_actor = lunar_critic(state,noisy_action).mean()
 
         actor_loss = -q_value_for_actor
         # print(f"actor_loss: {actor_loss[0]}")
@@ -144,7 +164,7 @@ for run in range(0,runs):
         actor_loss.backward()
         actor_optimizer.step()
         
-        q_value_for_critic = lunar_critic(state,action.detach())
+        q_value_for_critic = lunar_critic(state,noisy_action.detach())
         with T.no_grad():
             next_action = lunar_actor(next_state)
             target = reward + gamma * lunar_critic(next_state,next_action) #bellman
