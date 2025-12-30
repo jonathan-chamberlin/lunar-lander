@@ -19,7 +19,9 @@
 
 (DONE) Read my most recent message in my claude convo on browser. Then look at my psuedocode on @main.py, because that's my best understanding of how to actually implement this code
 
-Make it so the simulation actually can get successful landings, because although it's now descending upright, it is not printing the SUCCESS message.
+(IN PROGRESS)) Make it so the simulation actually can get successful landings, because although it's now descending upright, it is not printing the SUCCESS message.
+
+make it so the action includes some OUActionNoise
 
 Make it so I can render every 10th run
 

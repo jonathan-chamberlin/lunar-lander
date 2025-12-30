@@ -46,14 +46,25 @@ class actor_network(nn.Module):
         action = T.tanh(self.layer2(F.relu(self.layer1(state)))) #the F.relu and T.tanh is the hyperbolic tangent to make this network non-linear, and to bound the tensor to values -1 to 1.
         return action
     
-    def OUActionNoise(action_dimsension):
-        def __init__(self, mu,sigma,theta,dt,x0,action_dimensions):
+class OUActionNoise():
+    def __init__(self, mu,sigma,theta,dt,x0,action_dimensions):
+        self.sigma = sigma
+        self.theta=theta
+        self.dt=dt
+        self.x0 = x0
+        self.action_dimensions = action_dimensions
+        if isinstance(mu, int):
+            self.mu = mu*np.ones(action_dimensions)
+        else:
             self.mu = mu
-            self.sigma = sigma
-            self.theta=theta
-            self.dt=dt
-            self.x0=x0
-            self.action_dimensions = action_dimensions
+        self.reset()
+    
+    def reset(self):
+        self.noise = self.mu if self.x0 is None else self.x0
+    
+    def generate_noise(self):
+        self.noise = self.noise + self.theta * (self.mu - self.noise) * self.dt + self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.action_dimensions)
+        return self.noise
 
 class critic_network(nn.Module):
     def __init__(self, state_dim, action_dim):
