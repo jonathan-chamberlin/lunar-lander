@@ -23,7 +23,7 @@ mu = [0,0]
 sigma = 0.1
 theta = 0.2
 dt = 0.01
-x0 = None
+x0 = 0
 action_dimensions = 2
 
 training_env = gym.make("LunarLanderContinuous-v3", render_mode="human")
@@ -67,9 +67,9 @@ class OUActionNoise():
             self.mu = np.array(mu)
         
         if x0 is None:
-            self.noise = self.mu
+            self.noise = np.array(self.mu)
         else:
-            self.noise = x0.np.ones(action_dimensions)
+            self.noise = np.array(x0*np.ones(action_dimensions))
         self.reset()
     
     def reset(self):
@@ -100,6 +100,8 @@ lunar_critic = critic_network(8,2)
 
 actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
 critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
+
+lunar_noise = OUActionNoise(mu,sigma,theta,dt,x0,action_dimensions)
 
 total_reward_for_alls_runs = []
 successes_list =[]
@@ -140,11 +142,11 @@ for run in range(0,runs):
         # print("=" *10)
         # print(f"Run {run}")
         
-        lunar_noise = OUActionNoise(mu,sigma,theta,dt,x0,action_dimensions)
+        
         noise = lunar_noise.generate_noise()
         action_without_noise = lunar_actor(state)
         print(f"noise: {noise}")
-        noisy_action = action_without_noise + noise
+        noisy_action = (action_without_noise + noise).float()
         action_calculations = training_env.step(noisy_action.detach().numpy())
 
         
