@@ -13,13 +13,13 @@
 - (DONE)  Install claude code: https://code.claude.com/docs/en/overview
 
 
-(DONE) ) Rewatch this video about actor critic network: https://www.youtube.com/watch?v=oydExwuuUCw
+(DONE) Rewatch this video about actor critic network: https://www.youtube.com/watch?v=oydExwuuUCw
 
 (DONE) Based on that video, ask claude if it makes more sense to create a function or class for each network. To me with my limited knowledge about the uses of classes it seems like functions would be better, where all parameters for each are passed as argurments.
 
 (DONE) Read my most recent message in my claude convo on browser. Then look at my psuedocode on @main.py, because that's my best understanding of how to actually implement this code
 
-(IN PROGRESS)) Make it so the simulation actually can get successful landings, because although it's now descending upright, it is not printing the SUCCESS message.
+(IN PROGRESS) Make it so the simulation actually can get successful landings, because although it's now descending upright, it is not printing the SUCCESS message.
 
 make it so the action includes some OUActionNoise
 
