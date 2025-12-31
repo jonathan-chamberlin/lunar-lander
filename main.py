@@ -18,6 +18,7 @@ framerate = 600
 runs = 500
 runs_to_render = [0,3,4]
 gamma = 0.99
+alpha = 0.1
 
 mu = [0,0]
 sigma = 0.1
@@ -123,6 +124,7 @@ for run in range(0,runs):
     train_obs, _ = training_env.reset()
     render_obs, _ = render_env.reset()
     state = T.from_numpy(train_obs)
+    q_value = 0
     
     reward_list_for_run = []
     running = True
@@ -158,9 +160,9 @@ for run in range(0,runs):
         truncated = action_calculations[3]
         info = action_calculations[4]
         
-        q_value_for_actor = lunar_critic(state,noisy_action).mean()
+        q_value = lunar_critic(state,noisy_action)
 
-        actor_loss = -q_value_for_actor
+        actor_loss = -q_value
         # print(f"actor_loss: {actor_loss[0]}")
         actor_optimizer.zero_grad()
         actor_loss.backward()
