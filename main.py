@@ -160,9 +160,9 @@ for run in range(0,runs):
         truncated = action_calculations[3]
         info = action_calculations[4]
         
-        q_value = lunar_critic(state,noisy_action)
+        q_value_for_actor = lunar_critic(state,noisy_action)
 
-        actor_loss = -q_value
+        actor_loss = -q_value_for_actor
         # print(f"actor_loss: {actor_loss[0]}")
         actor_optimizer.zero_grad()
         actor_loss.backward()
