@@ -107,6 +107,12 @@ lunar_noise = OUActionNoise(mu,sigma,theta,dt,x0,action_dimensions)
 total_reward_for_alls_runs = []
 successes_list =[]
 
+
+
+# memory. Format is (state, action, reward, next_state, done_flag)
+experiences = []
+
+
 # Game loop
 
 for run in range(0,runs):
@@ -124,7 +130,7 @@ for run in range(0,runs):
     train_obs, _ = training_env.reset()
     render_obs, _ = render_env.reset()
     state = T.from_numpy(train_obs)
-    q_value = 0
+    
     
     reward_list_for_run = []
     running = True
@@ -141,8 +147,7 @@ for run in range(0,runs):
                 print(f"total_reward_for_alls_runs: {total_reward_for_alls_runs}")
                 print(f"successes_list: {successes_list}")
                 running = False
-        # print("=" *10)
-        # print(f"Run {run}")
+        
         
         
         noise = lunar_noise.generate_noise()
@@ -183,6 +188,8 @@ for run in range(0,runs):
         
         reward_list_for_run.append(float(reward))
         
+        
+        
         # print("=" * 10)
         # print(f"Observation: {observation}")
         # print(f"Reward: {reward}")
@@ -203,6 +210,10 @@ for run in range(0,runs):
         
         
         
+    
+    experience = (state, noisy_action,reward,next_state, True)
+    experiences.append(experience)
+    print(f"experiences: {experiences}")
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
