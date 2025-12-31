@@ -10,6 +10,7 @@ import torch.optim as optim
 import numpy as np
 import pygame as pg
 import gymnasium as gym
+import random
 warnings.filterwarnings("ignore")
 pg.init()
 
