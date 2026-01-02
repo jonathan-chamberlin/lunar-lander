@@ -121,15 +121,10 @@ for run in range(0,runs):
         # print(f"State: {state}")
         experience = (state.detach(), noisy_action.detach(),reward,next_state.detach(), True)
         experiences.append(experience)
-        # print(f"Experience: {experience}")
-        print(f"Length of experiences: {len(experiences)}")
         
         state = next_state
-        
+
         reward_list_for_run.append(float(reward))
-        
-        
-        
         # print("=" * 10)
         # print(f"Observation: {observation}")
         # print(f"Reward: {reward}")
@@ -151,10 +146,14 @@ for run in range(0,runs):
         
         
         
+    # After each run ===================
+    
+    random_sample_experiences = random.sample(experiences,sample_size if len(experiences) > sample_size else len(experiences))
+    print(f"Length of random_sample_experiences: {len(random_sample_experiences)}")
+    # print(f"random_sample_experiences: {random_sample_experiences}")
     
     
-    # print(f"experiences: {experiences}")
-    
+        
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
 

@@ -13,3 +13,5 @@ x0 = 0
 action_dimensions = 2
 
 max_experiences_to_store = 1<<24
+
+sample_size = 10000
