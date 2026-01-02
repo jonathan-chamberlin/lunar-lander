@@ -156,7 +156,9 @@ for run in range(0,runs):
     
     for experience in range(len(next_state_batch)):
         
-        action_based_on_one_sample = lunar_actor(experience)
+        
+        
+        action_based_on_one_sample = lunar_actor(next_state_batch[experience])
         
         next_state_from_one_sample = next_state_batch[experience]
         
@@ -172,7 +174,7 @@ for run in range(0,runs):
         actor_optimizer.step()
         
         with T.no_grad():
-            next_action_from_one_sample = lunar_actor(experience)
+            next_action_from_one_sample = lunar_actor(next_state_batch[experience])
             target = reward + gamma * lunar_critic(next_state_from_one_sample,next_action_from_one_sample) #bellman
         critic_loss_from_one_sample = F.mse_loss(q_values_for_critic_based_on_one_sample,target.detach())
         # print(f"Critic Loss: {critic_loss[0]}")
