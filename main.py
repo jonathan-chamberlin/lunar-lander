@@ -152,7 +152,12 @@ for run in range(0,runs):
     print(f"Length of random_sample_experiences: {len(random_sample_experiences)}")
     # print(f"random_sample_experiences: {random_sample_experiences}")
     
-    
+    # format is  (state, action, reward, next_state, done_flag)
+    state_batch, action_batch, reward_batch, next_state_batch, done_flag_batch = zip(*random_sample_experiences)
+    print(f"State batch: {state_batch}")
+    print(f"reward_batch: {reward_batch}")
+    print(f"next_state_batch: {next_state_batch}")
+    print(f"done_flag_batch: {done_flag_batch}")
         
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
