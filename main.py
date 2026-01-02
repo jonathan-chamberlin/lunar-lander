@@ -161,11 +161,20 @@ for run in range(0,runs):
     next_state_batch = T.stack(next_state_batch)
     done_flag_batch = T.stack(done_flag_batch)
     
-    print(f"State batch: {state_batch}")
-    print(f"reward_batch: {reward_batch}")
-    print(f"next_state_batch: {next_state_batch}")
-    print(f"done_flag_batch: {done_flag_batch}")
-        
+    # print(f"State batch: {state_batch}")
+    # print(f"reward_batch: {reward_batch}")
+    # print(f"next_state_batch: {next_state_batch}")
+    # print(f"done_flag_batch: {done_flag_batch}")
+    
+    actions_based_on_sample= lunar_actor(next_state_batch)
+    q_values_based_on_sample = lunar_critic(next_state_batch,actions_based_on_sample)
+    
+    print(f"actions_based_on_sample: {actions_based_on_sample}")
+    print(f"q_values_based_on_sample: {q_values_based_on_sample}")
+    
+    # now make the forward backward passes and such here
+    
+    
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
 
