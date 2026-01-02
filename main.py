@@ -6,6 +6,7 @@ import os
 import pygame as pg
 import gymnasium as gym
 import random
+import collections
 from network import *
 warnings.filterwarnings("ignore")
 pg.init()
@@ -42,10 +43,8 @@ lunar_noise = OUActionNoise(mu,sigma,theta,dt,x0,action_dimensions)
 total_reward_for_alls_runs = []
 successes_list =[]
 
-
-
 # memory. Format is (state, action, reward, next_state, done_flag)
-experiences = []
+experiences = collections.deque(maxlen= 1<<12)
 
 
 # Game loop
@@ -122,7 +121,8 @@ for run in range(0,runs):
         # print(f"State: {state}")
         experience = (state.detach(), noisy_action.detach(),reward,next_state.detach(), True)
         experiences.append(experience)
-        print(f"Experience: {experience}")
+        # print(f"Experience: {experience}")
+        print(f"Length of experiences: {len(experiences)}")
         
         state = next_state
         
