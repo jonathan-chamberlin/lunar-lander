@@ -34,7 +34,6 @@ print("Action space high:", env.action_space.high)
 print("Sample random action:", env.action_space.sample())
 '''
 
-
 lunar_actor = actor_network(8,2)
 lunar_critic = critic_network(8,2)
 
@@ -102,24 +101,7 @@ for run in range(0,runs):
         truncated = action_calculations[3]
         info = action_calculations[4]
         
-        q_value_for_actor = lunar_critic(state,noisy_action)
-
-        actor_loss = -q_value_for_actor
-        # print(f"actor_loss: {actor_loss[0]}")
-        actor_optimizer.zero_grad()
-        actor_loss.backward()
-        actor_optimizer.step()
-        
-        q_value_for_critic = lunar_critic(state,noisy_action.detach())
-        with T.no_grad():
-            next_action = lunar_actor(next_state)
-            target = reward + gamma * lunar_critic(next_state,next_action) #bellman
-        critic_loss = F.mse_loss(q_value_for_critic,target.detach())
-        # print(f"Critic Loss: {critic_loss[0]}")
-        
-        critic_optimizer.zero_grad()
-        critic_loss.backward()
-        critic_optimizer.step()
+        # COPIED LOSS AND FORWARD PASS CODE FROM HERE
         
         # print(f"State: {state}")
         experience = (T.tensor(state.detach()), T.tensor(noisy_action.detach()),T.tensor(reward),T.tensor(next_state.detach()), T.tensor(True))
@@ -169,14 +151,35 @@ for run in range(0,runs):
     # print(f"next_state_batch: {next_state_batch}")
     # print(f"done_flag_batch: {done_flag_batch}")
     
-    actions_based_on_sample= lunar_actor(next_state_batch)
-    q_values_based_on_sample = lunar_critic(next_state_batch,actions_based_on_sample)
     
-    print(f"actions_based_on_sample: {actions_based_on_sample}")
-    print(f"q_values_based_on_sample: {q_values_based_on_sample}")
+    # for each experience, find next action, and from q_values_for_actor the q_value with the same index. Then do the optimization steps.
     
-    # now make the forward backward passes and such here
-    
+    for experience in range(len(next_state_batch)):
+        
+        action_based_on_one_sample = lunar_actor(experience)
+        
+        next_state_from_one_sample = next_state_batch[experience]
+        
+        reward = float(reward_batch[experience])
+        
+        q_values_for_actor_based_on_one_sample = lunar_critic(next_state_from_one_sample,action_based_on_one_sample)
+        
+        q_values_for_critic_based_on_one_sample = lunar_critic(next_state_from_one_sample,action_based_on_one_sample.detach())
+        
+        actor_loss_from_one_sample = -q_values_for_actor_based_on_one_sample
+        actor_optimizer.zero_grad()
+        actor_loss_from_one_sample.backward()
+        actor_optimizer.step()
+        
+        with T.no_grad():
+            next_action_from_one_sample = lunar_actor(experience)
+            target = reward + gamma * lunar_critic(next_state_from_one_sample,next_action_from_one_sample) #bellman
+        critic_loss_from_one_sample = F.mse_loss(q_values_for_critic_based_on_one_sample,target.detach())
+        # print(f"Critic Loss: {critic_loss[0]}")
+        
+        critic_optimizer.zero_grad()
+        critic_loss_from_one_sample.backward()
+        critic_optimizer.step()    
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
