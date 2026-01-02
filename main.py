@@ -8,6 +8,7 @@ import gymnasium as gym
 import random
 import collections
 from network import *
+from functions import *
 warnings.filterwarnings("ignore")
 pg.init()
 
@@ -20,6 +21,8 @@ state = T.from_numpy(training_env.reset()[0])
 
 training_env.metadata["render_fps"] = framerate
 render_env.metadata["render_fps"] = framerate
+
+print(f"NAME OF TEST: {training_env}")
 
 # print(f"Initial Observation: {initial_observation}")
 
