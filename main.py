@@ -119,7 +119,7 @@ for run in range(0,runs):
         critic_optimizer.step()
         
         # print(f"State: {state}")
-        experience = (state.detach(), noisy_action.detach(),reward,next_state.detach(), True)
+        experience = (T.tensor(state.detach()), T.tensor(noisy_action.detach()),T.tensor(reward),T.tensor(next_state.detach()), T.tensor(True))
         experiences.append(experience)
         
         state = next_state
@@ -154,6 +154,13 @@ for run in range(0,runs):
     
     # format is  (state, action, reward, next_state, done_flag)
     state_batch, action_batch, reward_batch, next_state_batch, done_flag_batch = zip(*random_sample_experiences)
+    
+    state_batch = T.stack(state_batch)
+    action_batch = T.stack(action_batch)
+    reward_batch = T.stack(reward_batch)
+    next_state_batch = T.stack(next_state_batch)
+    done_flag_batch = T.stack(done_flag_batch)
+    
     print(f"State batch: {state_batch}")
     print(f"reward_batch: {reward_batch}")
     print(f"next_state_batch: {next_state_batch}")

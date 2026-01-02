@@ -12,6 +12,6 @@ dt = 0.01
 x0 = 0
 action_dimensions = 2
 
-max_experiences_to_store = 1<<24
+max_experiences_to_store = 1<<16
 
-sample_size = 10000
+sample_size = 1<<7
