@@ -87,7 +87,7 @@ for run in range(0,runs):
         
         noise = lunar_noise.generate_noise()
         action_without_noise = lunar_actor(state)
-        print(f"noise: {noise}")
+        # print(f"noise: {noise}")
         noisy_action = (action_without_noise + noise).float()
         action_calculations = training_env.step(noisy_action.detach().numpy())
 
@@ -119,6 +119,11 @@ for run in range(0,runs):
         critic_loss.backward()
         critic_optimizer.step()
         
+        # print(f"State: {state}")
+        experience = (state.detach(), noisy_action.detach(),reward,next_state.detach(), True)
+        experiences.append(experience)
+        print(f"Experience: {experience}")
+        
         state = next_state
         
         reward_list_for_run.append(float(reward))
@@ -145,10 +150,10 @@ for run in range(0,runs):
         
         
         
+        
     
-    experience = (state, noisy_action,reward,next_state, True)
-    experiences.append(experience)
-    print(f"experiences: {experiences}")
+    
+    # print(f"experiences: {experiences}")
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
