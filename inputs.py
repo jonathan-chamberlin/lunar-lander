@@ -11,3 +11,5 @@ theta = 0.2
 dt = 0.01
 x0 = 0
 action_dimensions = 2
+
+max_experiences_to_store = 1<<24

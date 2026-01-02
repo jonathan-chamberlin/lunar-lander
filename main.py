@@ -44,7 +44,7 @@ total_reward_for_alls_runs = []
 successes_list =[]
 
 # memory. Format is (state, action, reward, next_state, done_flag)
-experiences = collections.deque(maxlen= 1<<12)
+experiences = collections.deque(maxlen= max_experiences_to_store)
 
 
 # Game loop
