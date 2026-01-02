@@ -23,7 +23,9 @@
 
 (DONE) make it so the action includes some OUActionNoise
 
-Read most recent claude prompt and respons
+Read most recent claude prompt and response
+
+
 
 Make it so I can render every 10th run
 
