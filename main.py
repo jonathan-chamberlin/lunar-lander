@@ -155,9 +155,6 @@ for run in range(0,runs):
     # for each experience, find next action, and from q_values_for_actor the q_value with the same index. Then do the optimization steps.
     
     for experience in range(len(next_state_batch)):
-        
-        
-        
         action_based_on_one_sample = lunar_actor(next_state_batch[experience])
         
         next_state_from_one_sample = next_state_batch[experience]
