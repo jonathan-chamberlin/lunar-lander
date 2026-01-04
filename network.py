@@ -10,12 +10,20 @@ class actor_network(nn.Module):
         super().__init__()
         self.layer1 = nn.Linear(input_size, 400)
         self.layer2 = nn.Linear(400, 300)
-        self.layer3 = nn.Linear(300, output_size)
+        # Separate output layers for each action dimension
+        self.main_engine_layer = nn.Linear(300, 1)  # Main engine [0, 1]
+        self.side_engine_layer = nn.Linear(300, 1)  # Side engine [-1, 1]
 
     def forward(self, state: T.tensor):
         x = F.relu(self.layer1(state))
         x = F.relu(self.layer2(x))
-        action = T.tanh(self.layer3(x))  # Bound actions to [-1, 1]
+
+        # Apply appropriate activation for each action
+        main_engine = T.sigmoid(self.main_engine_layer(x))  # [0, 1] for main thruster
+        side_engine = T.tanh(self.side_engine_layer(x))      # [-1, 1] for side thruster
+
+        # Concatenate to form action vector
+        action = T.cat([main_engine, side_engine], dim=-1)
         return action
     
 class OUActionNoise():

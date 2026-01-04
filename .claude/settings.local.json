@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(dir /b \"C:\\\\Repositories for Git\\\\lunar-lander-file-folder\\\\lunar-lander\\\\*.py\")",
+      "Bash(ls:*)"
     ]
   }
 }
