@@ -8,11 +8,14 @@ import numpy as np
 class actor_network(nn.Module):
     def __init__(self, input_size, output_size):
         super().__init__()
-        self.layer1 = nn.Linear(input_size,256)
-        self.layer2 = nn.Linear(256,output_size)
+        self.layer1 = nn.Linear(input_size, 400)
+        self.layer2 = nn.Linear(400, 300)
+        self.layer3 = nn.Linear(300, output_size)
 
     def forward(self, state: T.tensor):
-        action = T.tanh(self.layer2(F.relu(self.layer1(state)))) #the F.relu and T.tanh is the hyperbolic tangent to make this network non-linear, and to bound the tensor to values -1 to 1.
+        x = F.relu(self.layer1(state))
+        x = F.relu(self.layer2(x))
+        action = T.tanh(self.layer3(x))  # Bound actions to [-1, 1]
         return action
     
 class OUActionNoise():
@@ -47,12 +50,17 @@ class OUActionNoise():
 class critic_network(nn.Module):
     def __init__(self, state_dim, action_dim):
         super().__init__()
-        input_dim = state_dim + action_dim
-        self.layer1 = nn.Linear(input_dim,256)
-        self.layer2 = nn.Linear(256,1) #outputs a single q value
-        
-    def forward(self,state,action):
-        combined = T.cat([state,action], dim=-1)
-        q_value = self.layer2(F.relu(self.layer1(combined)))
+        # State processing stream
+        self.state_layer = nn.Linear(state_dim, 400)
+        # Combined processing
+        self.layer1 = nn.Linear(400 + action_dim, 300)
+        self.layer2 = nn.Linear(300, 1)  # Outputs a single Q-value
+
+    def forward(self, state, action):
+        # Process state first, then combine with action
+        state_value = F.relu(self.state_layer(state))
+        combined = T.cat([state_value, action], dim=-1)
+        x = F.relu(self.layer1(combined))
+        q_value = self.layer2(x)
         return q_value
         

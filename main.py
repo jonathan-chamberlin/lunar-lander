@@ -45,8 +45,8 @@ target_critic = critic_network(8,2)
 target_actor.load_state_dict(lunar_actor.state_dict())
 target_critic.load_state_dict(lunar_critic.state_dict())
 
-actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=0.001)
-critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=0.001)
+actor_optimizer = optim.Adam(lunar_actor.parameters(), lr=actor_lr)
+critic_optimizer = optim.Adam(lunar_critic.parameters(), lr=critic_lr)
 
 lunar_noise = OUActionNoise(mu,sigma,theta,dt,x0,action_dimensions)
 
@@ -79,8 +79,11 @@ for run in range(0,runs):
     train_obs, _ = training_env.reset()
     render_obs, _ = render_env.reset()
     state = T.from_numpy(train_obs).float()
-    
-    
+
+    # Calculate noise scale for this episode (decay over episodes)
+    noise_scale = max(noise_scale_final,
+                     noise_scale_initial - (noise_scale_initial - noise_scale_final) * run / noise_decay_episodes)
+
     reward_list_for_run = []
     running = True
     print(f"Run {run}")
@@ -96,10 +99,8 @@ for run in range(0,runs):
                 print(f"total_reward_for_alls_runs: {total_reward_for_alls_runs}")
                 print(f"successes_list: {successes_list}")
                 running = False
-        
-        
-        
-        noise = lunar_noise.generate_noise()
+
+        noise = lunar_noise.generate_noise() * noise_scale
         action_without_noise = lunar_actor(state)
         # print(f"noise: {noise}")
         noisy_action = (action_without_noise + noise).float()
@@ -145,60 +146,69 @@ for run in range(0,runs):
         
         
     # After each run ===================
-    
-    random_sample_experiences = random.sample(experiences,sample_size if len(experiences) > sample_size else len(experiences))
-    print(f"Length of random_sample_experiences: {len(random_sample_experiences)}")
-    # print(f"random_sample_experiences: {random_sample_experiences}")
-    
-    # format is  (state, action, reward, next_state, done_flag)
-    state_batch, action_batch, reward_batch, next_state_batch, done_flag_batch = zip(*random_sample_experiences)
-    
-    state_batch = T.stack(state_batch)
-    action_batch = T.stack(action_batch)
-    reward_batch = T.stack(reward_batch)
-    next_state_batch = T.stack(next_state_batch)
-    done_flag_batch = T.stack(done_flag_batch)
-    
+
     # Only train if we have enough experiences
     if len(experiences) >= min_experiences_before_training:
 
-        # === CRITIC TRAINING ===
-        # Compute target Q-values using target networks
-        with T.no_grad():
-            # Get actions for next states from target actor
-            next_actions = target_actor(next_state_batch)
-            # Compute target Q-values: r + gamma * Q_target(s', a')
-            target_q_values = target_critic(next_state_batch, next_actions)
-            # Apply Bellman equation
-            target_q = reward_batch.unsqueeze(-1) + gamma * target_q_values
+        total_critic_loss = 0
+        total_actor_loss = 0
 
-        # Get current Q-values from critic
-        current_q_values = lunar_critic(state_batch, action_batch)
+        # Multiple training updates per episode
+        for update_step in range(training_updates_per_episode):
+            random_sample_experiences = random.sample(experiences, sample_size if len(experiences) > sample_size else len(experiences))
 
-        # Compute critic loss (MSE between current Q and target Q)
-        critic_loss = F.mse_loss(current_q_values, target_q)
+            # format is  (state, action, reward, next_state, done_flag)
+            state_batch, action_batch, reward_batch, next_state_batch, done_flag_batch = zip(*random_sample_experiences)
 
-        # Update critic
-        critic_optimizer.zero_grad()
-        critic_loss.backward()
-        critic_optimizer.step()
+            state_batch = T.stack(state_batch)
+            action_batch = T.stack(action_batch)
+            reward_batch = T.stack(reward_batch)
+            next_state_batch = T.stack(next_state_batch)
+            done_flag_batch = T.stack(done_flag_batch)
 
-        # === ACTOR TRAINING ===
-        # Compute actor loss: negative mean Q-value
-        # Actor learns to maximize Q(s, actor(s))
-        predicted_actions = lunar_actor(state_batch)
-        actor_loss = -lunar_critic(state_batch, predicted_actions).mean()
+            # === CRITIC TRAINING ===
+            # Compute target Q-values using target networks
+            with T.no_grad():
+                # Get actions for next states from target actor
+                next_actions = target_actor(next_state_batch)
+                # Compute target Q-values: r + gamma * Q_target(s', a')
+                target_q_values = target_critic(next_state_batch, next_actions)
+                # Apply Bellman equation with done mask (zero out future rewards for terminal states)
+                done_mask = done_flag_batch.unsqueeze(-1).float()
+                target_q = reward_batch.unsqueeze(-1) + gamma * target_q_values * (1.0 - done_mask)
 
-        # Update actor
-        actor_optimizer.zero_grad()
-        actor_loss.backward()
-        actor_optimizer.step()
+            # Get current Q-values from critic
+            current_q_values = lunar_critic(state_batch, action_batch)
 
-        # === SOFT UPDATE TARGET NETWORKS ===
-        soft_update_target_networks(lunar_actor, target_actor, tau)
-        soft_update_target_networks(lunar_critic, target_critic, tau)
+            # Compute critic loss (MSE between current Q and target Q)
+            critic_loss = F.mse_loss(current_q_values, target_q)
 
-        print(f"Critic Loss: {critic_loss.item():.4f}, Actor Loss: {actor_loss.item():.4f}")    
+            # Update critic
+            critic_optimizer.zero_grad()
+            critic_loss.backward()
+            critic_optimizer.step()
+
+            # === ACTOR TRAINING ===
+            # Compute actor loss: negative mean Q-value
+            # Actor learns to maximize Q(s, actor(s))
+            predicted_actions = lunar_actor(state_batch)
+            actor_loss = -lunar_critic(state_batch, predicted_actions).mean()
+
+            # Update actor
+            actor_optimizer.zero_grad()
+            actor_loss.backward()
+            actor_optimizer.step()
+
+            # === SOFT UPDATE TARGET NETWORKS ===
+            soft_update_target_networks(lunar_actor, target_actor, tau)
+            soft_update_target_networks(lunar_critic, target_critic, tau)
+
+            total_critic_loss += critic_loss.item()
+            total_actor_loss += actor_loss.item()
+
+        avg_critic_loss = total_critic_loss / training_updates_per_episode
+        avg_actor_loss = total_actor_loss / training_updates_per_episode
+        print(f"Avg Critic Loss: {avg_critic_loss:.4f}, Avg Actor Loss: {avg_actor_loss:.4f}, Noise Scale: {noise_scale:.3f}")    
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
