@@ -23,14 +23,15 @@
 
 (DONE) make it so the action includes some OUActionNoise
 
-Read most recent claude prompt and response
+(DONE) Read most recent claude prompt and response
 
+(DONE) The lander seems ot be tipping over a lot more, so i need to investigate why. Paste codebase into claude to ask why.
 
+(DONE) Make it so I can render every 10th run
 
-Make it so I can render every 10th run
+(DONE) Make it so I can render an arbitrary list of runs_to_render
 
-Make it so I can render an arbitrary list of runs_to_render
+Run this message in claude code:
 
-The lander seems ot be tipping over a lot more, so i need to investigate why. Paste codebase into claude to ask why.
 
 Find out how to benchmark training time so i can compare how much i sped up my code by (https://gymnasium.farama.org/introduction/speed_up_env/)
