@@ -14,6 +14,9 @@ class actor_network(nn.Module):
         self.main_engine_layer = nn.Linear(300, 1)  # Main engine [0, 1]
         self.side_engine_layer = nn.Linear(300, 1)  # Side engine [-1, 1]
 
+        # Initialize main engine bias to 0 so sigmoid(0) = 0.5 (moderate thrust)
+        nn.init.constant_(self.main_engine_layer.bias, 0.0)
+
     def forward(self, state: T.tensor):
         x = F.relu(self.layer1(state))
         x = F.relu(self.layer2(x))

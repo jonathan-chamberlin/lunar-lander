@@ -62,54 +62,28 @@ def soft_update_target_networks(main_network, target_network, tau):
 # Reward shaping function to provide intermediate learning signals
 def shape_reward(state, base_reward, done):
     """
-    Add intermediate rewards to guide learning before achieving successful landings.
-
+    Simple reward shaping: reward slow velocity, with descent bias.
     LunarLander state: [x_pos, y_pos, x_vel, y_vel, angle, angular_vel, leg1_contact, leg2_contact]
     """
     shaped_reward = base_reward
 
     # Extract state components
-    x_pos = state[0]
-    y_pos = state[1]  # Altitude (height above ground)
     x_vel = state[2]
     y_vel = state[3]
     angle = state[4]
-    angular_vel = state[5]
-    leg1_contact = state[6]
-    leg2_contact = state[7]
 
-    # Reward 1: Staying upright (small constant reward)
-    if abs(angle) < 0.3:  # Within ~17 degrees of upright
+    total_velocity = np.sqrt(x_vel**2 + y_vel**2)
+
+    # Reward staying upright
+    if abs(angle) < 0.3:
         shaped_reward += 0.2
 
-    # Reward 2: Low velocity bonus (want to slow down for landing)
-    total_velocity = np.sqrt(x_vel**2 + y_vel**2)
+    # Reward slow velocity (teaches control)
     if total_velocity < 1.0:
         shaped_reward += 0.5
-
-    # Reward 3: Hovering near ground (preparing to land)
-    if y_pos < 0.5 and total_velocity < 0.5 and abs(angle) < 0.2:
-        shaped_reward += 1.0  # Reward for controlled hover near landing zone
-
-    # Reward 4: Slow descent (negative y_vel is good when near ground)
-    if y_pos < 0.8 and -0.5 < y_vel < 0.0:  # Slow downward motion near ground
-        shaped_reward += 0.5
-
-    # SOLUTION 2: Altitude-scaled progressive rewards
-    # Give exponentially higher rewards the closer to ground with low velocity
-    # This creates a strong gradient toward controlled descent
-    altitude_factor = max(0, 1 - y_pos)  # 0 at top, 1 at ground
-    velocity_quality = 1.0 / (1.0 + total_velocity)  # High when slow, low when fast
-    altitude_velocity_bonus = altitude_factor * velocity_quality * 10.0
-    shaped_reward += altitude_velocity_bonus
-
-    # SOLUTION 4: Landing quality cumulative bonus
-    # Reward sustained good behavior: near ground + slow + upright
-    # This accumulates over multiple steps when all conditions are maintained
-    if y_pos < 0.6 and total_velocity < 1.0 and abs(angle) < 0.4:
-        upright_quality = 1.0 - abs(angle) / 0.4  # 1.0 when perfectly upright, 0.0 at threshold
-        landing_quality_bonus = altitude_factor * velocity_quality * upright_quality * 8.0
-        shaped_reward += landing_quality_bonus
+        # Bonus for descending (biases toward ground)
+        if y_vel <= 0:
+            shaped_reward += 0.3
 
     return shaped_reward
 
@@ -190,17 +164,24 @@ for run in range(0,runs):
         if not running:
             break
 
-        noise = lunar_noise.generate_noise() * noise_scale
-        action_without_noise = lunar_actor(state)
+        # Random warmup: use random actions for first N episodes
+        if run < random_warmup_episodes:
+            # Completely random action
+            random_action = training_env.action_space.sample()
+            noisy_action = T.from_numpy(random_action).float()
+        else:
+            # Normal actor + noise
+            noise = lunar_noise.generate_noise() * noise_scale
+            action_without_noise = lunar_actor(state)
 
-        # Actor now directly outputs correct ranges:
-        # action[0] = main engine in [0, 1] (sigmoid)
-        # action[1] = side engine in [-1, 1] (tanh)
-        noisy_action = (action_without_noise + noise).float()
+            # Actor now directly outputs correct ranges:
+            # action[0] = main engine in [0, 1] (sigmoid)
+            # action[1] = side engine in [-1, 1] (tanh)
+            noisy_action = (action_without_noise + noise).float()
 
-        # Clamp to valid ranges after adding noise
-        noisy_action[0] = T.clamp(noisy_action[0], 0.0, 1.0)  # Main engine [0, 1]
-        noisy_action[1] = T.clamp(noisy_action[1], -1.0, 1.0)  # Side engine [-1, 1]
+            # Clamp to valid ranges after adding noise
+            noisy_action[0] = T.clamp(noisy_action[0], 0.0, 1.0)  # Main engine [0, 1]
+            noisy_action[1] = T.clamp(noisy_action[1], -1.0, 1.0)  # Side engine [-1, 1]
 
         # Track actions for diagnostics
         actions_this_episode.append(noisy_action.detach().cpu().numpy())
@@ -383,18 +364,18 @@ for run in range(0,runs):
 
         # Warning if actor loss is too positive (indicates divergence)
         if avg_actor_loss > 5:
-            print(f"  ⚠️  WARNING: High actor loss ({avg_actor_loss:.2f}) - possible divergence!")
+            print(f"  WARNING: High actor loss ({avg_actor_loss:.2f}) - possible divergence!")
 
         # Warning if main thruster is too high (blasting upward behavior)
         if episode_main_thruster[-1] > 0.5:
-            print(f"  ⚠️  WARNING: High main thruster ({episode_main_thruster[-1]:.2f}) - blasting upward!")    
+            print(f"  WARNING: High main thruster ({episode_main_thruster[-1]:.2f}) - blasting upward!")    
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run} (shaped bonus: +{shaped_reward_bonus:.1f})")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
 
 
 # ===== COMPREHENSIVE DIAGNOSTIC OUTPUT =====
-print("\n🔍 DIAGNOSTIC CODE REACHED - PROCESSING RESULTS...")
+print("\n--- DIAGNOSTIC CODE REACHED - PROCESSING RESULTS ---")
 import sys
 sys.stdout.flush()
 
@@ -443,7 +424,7 @@ print("No action data collected (training hasn't started yet)")
 print(f"\n--- TRAINING METRICS ---")
 print(f"Mean Q-value: {np.mean(episode_q_values):.3f}")
 if len(episode_q_values) >= 10:
-    print(f"Q-value trend (first 10 vs last 10): {np.mean(episode_q_values[:10]):.3f} → {np.mean(episode_q_values[-10:]):.3f}")
+    print(f"Q-value trend (first 10 vs last 10): {np.mean(episode_q_values[:10]):.3f} -> {np.mean(episode_q_values[-10:]):.3f}")
 print(f"Mean actor loss: {np.mean(episode_actor_losses):.4f}")
 print(f"Mean critic loss: {np.mean(episode_critic_losses):.4f}")
 print(f"Mean actor gradient norm: {np.mean(episode_actor_grad_norms):.4f}")

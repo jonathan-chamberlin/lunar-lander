@@ -23,7 +23,10 @@ min_experiences_before_training = 500  # Minimum buffer size before training sta
 # Noise decay parameters
 noise_scale_initial = 1.0  # Start with full noise
 noise_scale_final = 0.1   # End with 10% noise (TD3 standard - retain more exploration)
-noise_decay_episodes = 100  # Decay over first 100 episodes (TD3 standard - 3x faster transition)
+noise_decay_episodes = 300  # Decay over first 300 episodes (slower decay for more exploration)
+
+# Random warmup: use completely random actions for first N episodes
+random_warmup_episodes = 30
 
 # Training parameters
 training_updates_per_episode = 50  # Number of gradient updates per episode (TD3 standard - 10x increase)
