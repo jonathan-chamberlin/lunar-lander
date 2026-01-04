@@ -117,8 +117,9 @@ for run in range(0,runs):
         
         # COPIED LOSS AND FORWARD PASS CODE FROM HERE
         
-        # print(f"State: {state}")
-        experience = (state.detach().clone(), noisy_action.detach().clone(), T.tensor(reward, dtype=T.float32), next_state.detach().clone(), T.tensor(terminated))
+        # Scale reward to prevent large Q-values and improve stability
+        scaled_reward = reward * reward_scale
+        experience = (state.detach().clone(), noisy_action.detach().clone(), T.tensor(scaled_reward, dtype=T.float32), next_state.detach().clone(), T.tensor(terminated))
         experiences.append(experience)
         
         state = next_state
@@ -149,6 +150,9 @@ for run in range(0,runs):
 
     # Only train if we have enough experiences
     if len(experiences) >= min_experiences_before_training:
+        if run == 0 or (len(experiences) >= min_experiences_before_training and
+                        len(experiences) - (training_env.spec.max_episode_steps or 1000) < min_experiences_before_training):
+            print(f">>> TRAINING STARTED at episode {run} with {len(experiences)} experiences <<<")
 
         total_critic_loss = 0
         total_actor_loss = 0
@@ -186,6 +190,8 @@ for run in range(0,runs):
             # Update critic
             critic_optimizer.zero_grad()
             critic_loss.backward()
+            # Clip gradients to prevent divergence
+            T.nn.utils.clip_grad_norm_(lunar_critic.parameters(), gradient_clip_value)
             critic_optimizer.step()
 
             # === ACTOR TRAINING ===
@@ -197,6 +203,8 @@ for run in range(0,runs):
             # Update actor
             actor_optimizer.zero_grad()
             actor_loss.backward()
+            # Clip gradients to prevent divergence
+            T.nn.utils.clip_grad_norm_(lunar_actor.parameters(), gradient_clip_value)
             actor_optimizer.step()
 
             # === SOFT UPDATE TARGET NETWORKS ===
@@ -208,7 +216,16 @@ for run in range(0,runs):
 
         avg_critic_loss = total_critic_loss / training_updates_per_episode
         avg_actor_loss = total_actor_loss / training_updates_per_episode
-        print(f"Avg Critic Loss: {avg_critic_loss:.4f}, Avg Actor Loss: {avg_actor_loss:.4f}, Noise Scale: {noise_scale:.3f}")    
+
+        # Compute average Q-value for diagnostics (using last batch)
+        with T.no_grad():
+            avg_q_value = current_q_values.mean().item()
+
+        print(f"Avg Critic Loss: {avg_critic_loss:.4f}, Avg Actor Loss: {avg_actor_loss:.4f}, Avg Q: {avg_q_value:.4f}, Noise: {noise_scale:.3f}")
+
+        # Warning if actor loss is too positive (indicates divergence)
+        if avg_actor_loss > 10:
+            print(f"  ⚠️  WARNING: High actor loss ({avg_actor_loss:.2f}) - possible divergence!")    
     
     print(f"total_reward_for_one_run: {total_reward_for_one_run}")
     total_reward_for_alls_runs.append(total_reward_for_one_run)
