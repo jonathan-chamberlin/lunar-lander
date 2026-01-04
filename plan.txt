@@ -45,4 +45,4 @@ Next to speed up the code, ask what are other ways I can speed up this code.
 
 Then say "Sometimes if you change your code to be less readable, it can be faster. Find high impact examples of where this could be applied, especially on complex operations that run every frame 
 
-Find out how to benchmark training time so i can compare how much i sped up my code by (https://gymnasium.farama.org/introduction/speed_up_env/)
+Keep running my simulation to ensure it actually hits the benchmark of 200 reward for 100 episodes in a row
