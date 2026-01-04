@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python:*)",
       "Bash(dir /b \"C:\\\\Repositories for Git\\\\lunar-lander-file-folder\\\\lunar-lander\\\\*.py\")",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(.venv-3.12.5Scriptsactivate)",
+      "Bash(\".venv-3.12.5\\\\Scripts\\\\python.exe\" main.py)"
     ]
   }
 }
