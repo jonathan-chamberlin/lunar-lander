@@ -1,5 +1,4 @@
 framerate = 600
-
 runs = 20
 runs_to_render = [0,3,19]
 gamma = 0.99
