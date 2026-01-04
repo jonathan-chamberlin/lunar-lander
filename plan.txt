@@ -32,6 +32,13 @@
 (DONE) Make it so I can render an arbitrary list of runs_to_render
 
 Run this message in claude code:
+Now i want to be able to time my simulation to benchmark how fast it is to do 100 runs. How can I do that? I want a value on inputs called timing: bool. If it's true, the timer starts, and if it's true, the last thing to print on the terminal is the time it took.
+
+Time how long a simulation takes to render all 100 runs. Record it
+
+Time how long a simulation takes to render only the 100th run. Record it.
+
+Run in claude:
 Right now I want to speed up my simulation by vectorizing the environments. first make a plan of how you'll do this. Wait for my approval before doing it.
 
 Next to speed up the code, ask what are other ways I can speed up this code.
