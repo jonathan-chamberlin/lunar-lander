@@ -467,6 +467,7 @@ for i in range(start_idx, length-1):
     episode_num = i
     status = "SUCCESS" if i in successes_list else "FAILURE"
 
+    
     info_str = f"Ep {episode_num}: {status}, Reward: {reward:.1f}"
 
     # Calculate the correct index in the tracking lists
