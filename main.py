@@ -3,6 +3,7 @@
 
 import warnings
 import os
+import time
 import pygame as pg
 import gymnasium as gym
 import random
@@ -11,6 +12,10 @@ import numpy as np
 from network import *
 warnings.filterwarnings("ignore")
 pg.init()
+
+# Start timer if timing is enabled
+if timing:
+    start_time = time.time()
 
 
 
@@ -475,3 +480,7 @@ print("\n" + "="*80)
 print("END OF DIAGNOSTICS")
 print("="*80)
 
+# Print elapsed time if timing is enabled
+if timing:
+    elapsed_time = time.time() - start_time
+    print(f"\nTotal simulation time: {elapsed_time:.2f} seconds")
