@@ -14,15 +14,18 @@ pg.init()
 
 
 
-training_env = gym.make("LunarLanderContinuous-v3", render_mode="human")
-render_env = gym.make("LunarLanderContinuous-v3", render_mode=None)
-initial_observation = training_env.reset()[0]
-state = T.from_numpy(training_env.reset()[0]).float()
+# Setup for selective rendering - only render runs in runs_to_render
+runs_to_render_set = set(runs_to_render)  # O(1) lookup
+currently_rendering = 0 in runs_to_render_set
 
-training_env.metadata["render_fps"] = framerate
-render_env.metadata["render_fps"] = framerate
+env = gym.make("LunarLanderContinuous-v3",
+               render_mode="human" if currently_rendering else None)
+env.metadata["render_fps"] = framerate
 
-print(f"NAME OF TEST: {training_env}")
+initial_observation = env.reset()[0]
+state = T.from_numpy(env.reset()[0]).float()
+
+print(f"NAME OF TEST: {env}")
 
 # print(f"Initial Observation: {initial_observation}")
 
@@ -122,19 +125,17 @@ for run in range(0,runs):
     if user_quit:
         break
 
-    #PSUEDOCODE for making it so only certain run indexes are rendered:
-    # if we want to render the run:
-        #if previous run wasn't rendered:
-            #destroy training environment
-        #use rendering environement
-    # if we don't want to render the run
-        #if previous run was rendered:
-            #destroy rendering environment
-        #use non-rendering environment
-    
-    train_obs, _ = training_env.reset()
-    render_obs, _ = render_env.reset()
-    state = T.from_numpy(train_obs).float()
+    # Switch environment when render state changes
+    should_render = run in runs_to_render_set
+    if should_render != currently_rendering:
+        env.close()
+        env = gym.make("LunarLanderContinuous-v3",
+                       render_mode="human" if should_render else None)
+        env.metadata["render_fps"] = framerate
+        currently_rendering = should_render
+
+    obs, _ = env.reset()
+    state = T.from_numpy(obs).float()
 
     # Calculate noise scale for this episode (decay over episodes)
     noise_scale = max(noise_scale_final,
@@ -146,28 +147,29 @@ for run in range(0,runs):
     running = True
     print(f"Run {run}")
     
-    while running:  
-        events = pg.event.get()
-        
-        for event in events:
-            if event.type == 256:
-                training_env.close()
-                render_env.close()
-                print("=" * 50)
-                print(f"total_reward_for_alls_runs: {total_reward_for_alls_runs}")
-                print(f"successes_list: {successes_list}")
-                running = False
-                user_quit = True
-                break  # Exit event loop
+    while running:
+        # Only check pygame events when rendering (pygame not initialized otherwise)
+        if currently_rendering:
+            events = pg.event.get()
 
-        # Skip rest of episode if user quit
-        if not running:
-            break
+            for event in events:
+                if event.type == 256:
+                    env.close()
+                    print("=" * 50)
+                    print(f"total_reward_for_alls_runs: {total_reward_for_alls_runs}")
+                    print(f"successes_list: {successes_list}")
+                    running = False
+                    user_quit = True
+                    break  # Exit event loop
+
+            # Skip rest of episode if user quit
+            if not running:
+                break
 
         # Random warmup: use random actions for first N episodes
         if run < random_warmup_episodes:
             # Completely random action
-            random_action = training_env.action_space.sample()
+            random_action = env.action_space.sample()
             noisy_action = T.from_numpy(random_action).float()
         else:
             # Normal actor + noise
@@ -186,7 +188,7 @@ for run in range(0,runs):
         # Track actions for diagnostics
         actions_this_episode.append(noisy_action.detach().cpu().numpy())
 
-        action_calculations = training_env.step(noisy_action.detach().numpy())
+        action_calculations = env.step(noisy_action.detach().numpy())
 
 
         # print(f"Action: {action}")
@@ -198,8 +200,8 @@ for run in range(0,runs):
         info = action_calculations[4]
 
         # REWARD SHAPING: Add intermediate rewards to guide learning
-        # IMPORTANT: Use train_obs (current state BEFORE step), not action_calculations[0] (next state AFTER step)
-        shaped_reward = shape_reward(train_obs, reward, terminated)
+        # IMPORTANT: Use obs (current state BEFORE step), not action_calculations[0] (next state AFTER step)
+        shaped_reward = shape_reward(obs, reward, terminated)
         shaped_reward_bonus += (shaped_reward - reward)  # Track bonus added
 
         # Store experience with shaped reward (no clipping - let TD3 handle it)
@@ -207,7 +209,7 @@ for run in range(0,runs):
         experiences.append(experience)
 
         state = next_state
-        train_obs = action_calculations[0]  # Update current observation for next iteration
+        obs = action_calculations[0]  # Update current observation for next iteration
 
         # Track ORIGINAL reward for success detection (not shaped)
         reward_list_for_run.append(float(reward))
@@ -223,8 +225,7 @@ for run in range(0,runs):
                 print("SUCCESS")
             else:
                 print("FAILURE")
-            training_env.reset()
-            render_env.reset()
+            env.reset()
             running = False
 
     # Calculate total reward for this episode

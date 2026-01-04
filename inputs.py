@@ -1,7 +1,7 @@
 framerate = 600
 
-runs = 500
-runs_to_render = [0,3,4]
+runs = 20
+runs_to_render = [0,3,19]
 gamma = 0.99
 alpha = 0.1
 actor_lr = 0.0003  # Actor learning rate (TD3 standard value - 6x increase for actual learning)
