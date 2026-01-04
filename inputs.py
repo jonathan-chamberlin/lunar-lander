@@ -1,10 +1,11 @@
 timing = True  # Set to True to benchmark simulation time
 framerate = 600
-runs = 5
+runs = 10
 
 all = list(range(runs-1))
+last = runs-1
 
-runs_to_render = [*all]
+runs_to_render = [last]
 gamma = 0.99
 alpha = 0.1
 actor_lr = 0.0003  # Actor learning rate (TD3 standard value - 6x increase for actual learning)
