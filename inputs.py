@@ -15,3 +15,5 @@ action_dimensions = 2
 max_experiences_to_store = 1<<16
 
 sample_size = 1<<7
+tau = 0.005  # Soft update rate for target networks
+min_experiences_before_training = 1000  # Minimum buffer size before training starts

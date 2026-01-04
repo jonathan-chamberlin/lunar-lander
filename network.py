@@ -42,7 +42,7 @@ class OUActionNoise():
     def generate_noise(self):
         for dimension in range(action_dimensions):
             self.noise[dimension] =self.noise[dimension] + self.theta * (self.mu[dimension] - self.noise[dimension]) * self.dt + self.sigma * np.sqrt(self.dt) * np.random.normal(size=1)
-        return T.from_numpy(self.noise)
+        return T.from_numpy(self.noise).float()
 
 class critic_network(nn.Module):
     def __init__(self, state_dim, action_dim):
