@@ -1,6 +1,7 @@
 timing = True  # Set to True to benchmark simulation time
 framerate = 600
-runs = 10
+runs = 100
+num_envs = 8  # Number of parallel environments for vectorized training
 
 all = list(range(runs-1))
 last = runs-1

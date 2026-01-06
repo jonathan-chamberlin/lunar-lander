@@ -30,33 +30,57 @@ class actor_network(nn.Module):
         return action
     
 class OUActionNoise():
-    def __init__(self, mu,sigma,theta,dt,x0,action_dimensions):
+    def __init__(self, mu, sigma, theta, dt, x0, action_dimensions, num_envs=1):
         self.sigma = sigma
-        self.theta=theta
-        self.dt=dt
+        self.theta = theta
+        self.dt = dt
         self.x0 = x0
         self.action_dimensions = action_dimensions
-        
+        self.num_envs = num_envs
+
+        # mu shape: (action_dimensions,)
         if isinstance(mu, int):
-            self.mu = np.array(mu*np.ones(action_dimensions))
+            self.mu = np.array(mu * np.ones(action_dimensions))
         else:
             self.mu = np.array(mu)
-        
+
+        # noise shape: (num_envs, action_dimensions)
         if x0 is None:
-            self.noise = np.array(self.mu)
+            self.noise = np.tile(self.mu, (num_envs, 1))
         else:
-            self.noise = np.array(x0*np.ones(action_dimensions))
+            self.noise = np.ones((num_envs, action_dimensions)) * x0
         self.reset()
-    
-    def reset(self):
-        # might need to implement this but make it so that self.noise is the same dimensions as action:
-        # self.noise = self.mu if self.x0 is None else self.x0
-        return 0
-    
+
+    def reset(self, env_idx=None):
+        if env_idx is not None:
+            # Reset specific environment's noise
+            if self.x0 is None:
+                self.noise[env_idx] = self.mu.copy()
+            else:
+                self.noise[env_idx] = np.ones(self.action_dimensions) * self.x0
+        else:
+            # Reset all environments
+            if self.x0 is None:
+                self.noise = np.tile(self.mu, (self.num_envs, 1))
+            else:
+                self.noise = np.ones((self.num_envs, self.action_dimensions)) * self.x0
+
     def generate_noise(self):
-        for dimension in range(action_dimensions):
-            self.noise[dimension] =self.noise[dimension] + self.theta * (self.mu[dimension] - self.noise[dimension]) * self.dt + self.sigma * np.sqrt(self.dt) * np.random.normal(size=1)
+        # Vectorized noise generation for all envs at once
+        # noise shape: (num_envs, action_dimensions)
+        random_noise = np.random.normal(size=(self.num_envs, self.action_dimensions))
+        self.noise = (self.noise +
+                      self.theta * (self.mu - self.noise) * self.dt +
+                      self.sigma * np.sqrt(self.dt) * random_noise)
         return T.from_numpy(self.noise).float()
+
+    def generate_noise_single(self):
+        # Generate noise for a single environment (for rendered episodes)
+        random_noise = np.random.normal(size=(1, self.action_dimensions))
+        single_noise = (self.noise[0:1] +
+                        self.theta * (self.mu - self.noise[0:1]) * self.dt +
+                        self.sigma * np.sqrt(self.dt) * random_noise)
+        return T.from_numpy(single_noise[0]).float()
 
 class critic_network(nn.Module):
     def __init__(self, state_dim, action_dim):
