@@ -73,28 +73,24 @@ def soft_update_target_networks(main_network, target_network, tau):
 # Reward shaping function to provide intermediate learning signals
 def shape_reward(state, base_reward, done):
     """
-    Simple reward shaping: reward slow velocity, with descent bias.
+    Minimal reward shaping: encourage descent, discourage hovering.
     LunarLander state: [x_pos, y_pos, x_vel, y_vel, angle, angular_vel, leg1_contact, leg2_contact]
     """
     shaped_reward = base_reward
 
-    # Extract state components
-    x_vel = state[2]
+    y_pos = state[1]
     y_vel = state[3]
-    angle = state[4]
 
-    total_velocity = np.sqrt(x_vel**2 + y_vel**2)
-
-    # Reward staying upright
-    if abs(angle) < 0.3:
+    # Only reward active descent (not hovering)
+    if (y_vel < -0.1):
+        shaped_reward += 0.2
+    
+    if abs(y_vel) < 0.02:
         shaped_reward += 0.2
 
-    # Reward slow velocity (teaches control)
-    if total_velocity < 1.0:
-        shaped_reward += 0.5
-        # Bonus for descending (biases toward ground)
-        if y_vel <= 0:
-            shaped_reward += 0.3
+    # Small penalty for being high up (discourages hovering)
+    if y_pos > 0.5:
+        shaped_reward -= 1
 
     return shaped_reward
 
@@ -160,7 +156,7 @@ def do_training_step():
         noise = T.randn_like(next_actions) * target_policy_noise
         noise = T.clamp(noise, -target_noise_clip, target_noise_clip)
         next_actions_noisy = next_actions + noise
-        next_actions_noisy[:, 0] = T.clamp(next_actions_noisy[:, 0], 0.0, 1.0)
+        next_actions_noisy[:, 0] = T.clamp(next_actions_noisy[:, 0], -1.0, 1.0)
         next_actions_noisy[:, 1] = T.clamp(next_actions_noisy[:, 1], -1.0, 1.0)
 
         target_q_values_1 = target_critic(next_state_batch, next_actions_noisy)
@@ -253,7 +249,7 @@ def run_rendered_episode(episode_num):
         else:
             noise = lunar_noise.generate_noise_single() * noise_scale
             action = (lunar_actor(state) + noise).float()
-            action[0] = T.clamp(action[0], 0.0, 1.0)
+            action[0] = T.clamp(action[0], -1.0, 1.0)
             action[1] = T.clamp(action[1], -1.0, 1.0)
 
         actions_list.append(action.detach().cpu().numpy())
@@ -336,7 +332,7 @@ while completed_episodes < runs and not user_quit:
         with T.no_grad():
             noise = lunar_noise.generate_noise() * noise_scale
             actions = lunar_actor(states) + noise
-            actions[:, 0] = T.clamp(actions[:, 0], 0.0, 1.0)
+            actions[:, 0] = T.clamp(actions[:, 0], -1.0, 1.0)
             actions[:, 1] = T.clamp(actions[:, 1], -1.0, 1.0)
 
     # Step all environments
