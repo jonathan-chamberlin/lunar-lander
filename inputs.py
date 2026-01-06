@@ -1,12 +1,12 @@
 timing = True  # Set to True to benchmark simulation time
 framerate = 600
-runs = 100
+runs = 200
 num_envs = 8  # Number of parallel environments for vectorized training
 
 all = list(range(runs-1))
 last = runs-1
 
-runs_to_render = [last]
+runs_to_render = all
 gamma = 0.99
 alpha = 0.1
 actor_lr = 0.0003  # Actor learning rate (TD3 standard value - 6x increase for actual learning)
