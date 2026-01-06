@@ -80,17 +80,26 @@ def shape_reward(state, base_reward, done):
 
     y_pos = state[1]
     y_vel = state[3]
+    # x_pos = state[0]
+    leg1_contact = state[6]
+    leg2_contact = state[7]
 
     # Only reward active descent (not hovering)
-    if (y_vel < -0.1):
-        shaped_reward += 0.2
+    # if (y_vel < -0.1):
+        # shaped_reward += 0.2
     
-    if abs(y_vel) < 0.02:
-        shaped_reward += 0.2
+    if y_pos < 0.25:
+        shaped_reward += 10
+    
+    if (leg1_contact and not(leg2_contact)) or (not(leg1_contact) and leg2_contact):
+        shaped_reward += 50
+    
+    if leg1_contact and leg2_contact:
+        shaped_reward += 100
+    
+    if y_vel < -0.05: 
+        shaped_reward += 5
 
-    # Small penalty for being high up (discourages hovering)
-    if y_pos > 0.5:
-        shaped_reward -= 1
 
     return shaped_reward
 
@@ -272,7 +281,8 @@ def run_rendered_episode(episode_num):
         if terminated or truncated:
             running = False
 
-    total_reward = float(np.sum(reward_list))
+    env_reward = float(np.sum(reward_list))
+    total_reward = env_reward + shaped_bonus
 
     # Track action statistics
     if len(actions_list) > 0 and len(experiences) >= min_experiences_before_training:
@@ -282,7 +292,7 @@ def run_rendered_episode(episode_num):
         episode_main_thruster.append(np.mean(actions_array[:, 0]))
         episode_side_thruster.append(np.mean(actions_array[:, 1]))
 
-    return total_reward, shaped_bonus
+    return total_reward, env_reward, shaped_bonus
 
 
 # ===== MAIN GAME LOOP (VECTORIZED) =====
@@ -305,7 +315,7 @@ print(f"Starting training with {num_envs} parallel environments...")
 while completed_episodes < runs and not user_quit:
     # Check if current episode should be rendered
     if completed_episodes in runs_to_render_set:
-        total_reward, shaped_bonus = run_rendered_episode(completed_episodes)
+        total_reward, env_reward, shaped_bonus = run_rendered_episode(completed_episodes)
 
         if not user_quit:
             if total_reward >= 200:
@@ -314,7 +324,7 @@ while completed_episodes < runs and not user_quit:
             else:
                 print("FAILURE")
 
-            print(f"total_reward_for_one_run: {total_reward} (shaped bonus: +{shaped_bonus:.1f})")
+            print(f"total_reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
             total_reward_for_alls_runs.append(total_reward)
             completed_episodes += 1
         continue

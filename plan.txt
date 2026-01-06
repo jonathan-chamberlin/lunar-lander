@@ -40,6 +40,8 @@ Now i want to be able to time my simulation to benchmark how fast it is to do 10
 
 (DONE) Speed up my simulation by vectorizing the environments. Total simulation time: 33.73 seconds
 
+Make it so the agent doesn't just learn to shoot the agent upwards and doesn't attempt to land
+
 Keep running my simulation to ensure it actually hits the benchmark of 200 reward for 100 episodes in a row
 
 Next to speed up the code, ask what are other ways I can speed up this code.
