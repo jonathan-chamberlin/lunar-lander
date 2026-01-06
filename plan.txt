@@ -38,8 +38,7 @@ Now i want to be able to time my simulation to benchmark how fast it is to do 10
 
 (DONE) Time how long a simulation takes to render no runs. Record it: IT TOOK Total simulation time: 59.03 seconds
 
-Run in claude:
-Right now I want to speed up my simulation by vectorizing the environments. first make a plan of how you'll do this. Wait for my approval before doing it.
+(DONE) Speed up my simulation by vectorizing the environments. Total simulation time: 33.73 seconds
 
 Keep running my simulation to ensure it actually hits the benchmark of 200 reward for 100 episodes in a row
 
