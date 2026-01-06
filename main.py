@@ -273,7 +273,7 @@ def run_rendered_episode(episode_num):
         obs = next_obs
         reward_list.append(float(reward))
 
-        if terminated:
+        if terminated or truncated:
             running = False
 
     total_reward = float(np.sum(reward_list))
