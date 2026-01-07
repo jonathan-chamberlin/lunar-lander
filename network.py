@@ -22,8 +22,8 @@ class actor_network(nn.Module):
         x = F.relu(self.layer2(x))
 
         # Apply appropriate activation for each action
-        main_engine = T.sigmoid(self.main_engine_layer(x))  # [0, 1] for main thruster
-        side_engine = T.tanh(self.side_engine_layer(x))      # [-1, 1] for side thruster
+        main_engine = T.tanh(self.main_engine_layer(x))  # [-1, 1] for main thruster
+        side_engine = T.tanh(self.side_engine_layer(x))  # [-1, 1] for side thruster
 
         # Concatenate to form action vector
         action = T.cat([main_engine, side_engine], dim=-1)

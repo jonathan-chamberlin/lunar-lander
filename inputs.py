@@ -31,7 +31,7 @@ noise_scale_final = 0.1   # End with 10% noise (TD3 standard - retain more explo
 noise_decay_episodes = 300  # Decay over first 300 episodes (slower decay for more exploration)
 
 # Random warmup: use completely random actions for first N episodes
-random_warmup_episodes = 30
+random_warmup_episodes = 5
 
 # Training parameters
 training_updates_per_episode = 50  # Number of gradient updates per episode (TD3 standard - 10x increase)
