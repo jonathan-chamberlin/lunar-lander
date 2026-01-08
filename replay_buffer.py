@@ -1,7 +1,6 @@
 """Replay buffer for experience replay in TD3 training."""
 
 import random
-from typing import Optional
 
 import torch as T
 
@@ -57,18 +56,6 @@ class ReplayBuffer:
             dones=T.stack(dones)
         )
 
-    def sample_raw(self, batch_size: int) -> list[Experience]:
-        """Sample a random batch of experiences as a list.
-
-        Args:
-            batch_size: Number of experiences to sample
-
-        Returns:
-            List of Experience tuples
-        """
-        actual_batch_size = min(batch_size, len(self.buffer))
-        return random.sample(self.buffer, actual_batch_size)
-
     def __len__(self) -> int:
         """Return the current number of experiences in the buffer."""
         return len(self.buffer)
@@ -88,40 +75,3 @@ class ReplayBuffer:
         """Clear all experiences from the buffer."""
         self.buffer.clear()
         self.position = 0
-
-
-class PrioritizedReplayBuffer(ReplayBuffer):
-    """Replay buffer with prioritized experience replay (PER).
-
-    Note: This is a stub for future implementation.
-    Currently behaves the same as ReplayBuffer.
-    """
-
-    def __init__(
-        self,
-        capacity: int,
-        alpha: float = 0.6,
-        beta_start: float = 0.4,
-        beta_frames: int = 100000
-    ) -> None:
-        super().__init__(capacity)
-        self.alpha = alpha
-        self.beta_start = beta_start
-        self.beta_frames = beta_frames
-        self.priorities: list[float] = []
-        self.frame = 0
-
-    def push(self, experience: Experience, priority: Optional[float] = None) -> None:
-        """Add an experience with priority."""
-        max_priority = max(self.priorities) if self.priorities else 1.0
-        if priority is None:
-            priority = max_priority
-
-        if len(self.buffer) < self.capacity:
-            self.priorities.append(priority)
-        else:
-            self.priorities[self.position] = priority
-
-        super().push(experience)
-
-    # TODO: Implement prioritized sampling based on TD-error

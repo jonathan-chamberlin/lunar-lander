@@ -93,19 +93,6 @@ class TD3Trainer:
         # Training state
         self.training_steps = 0
 
-    def select_action(self, state: T.Tensor, add_noise: bool = False) -> T.Tensor:
-        """Select action using the actor network.
-
-        Args:
-            state: Current state tensor
-            add_noise: Whether to add exploration noise (unused here, noise added externally)
-
-        Returns:
-            Action tensor
-        """
-        with T.no_grad():
-            return self.actor(state)
-
     def train_step(self, batch: ExperienceBatch) -> TrainingMetrics:
         """Perform one TD3 training update.
 

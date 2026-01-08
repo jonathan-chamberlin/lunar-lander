@@ -62,20 +62,6 @@ class RunConfig:
                 tuple(range(self.num_episodes))
             )
 
-    @classmethod
-    def with_render_episodes(
-        cls,
-        render_episodes: Tuple[int, ...],
-        **kwargs
-    ) -> 'RunConfig':
-        """Factory method to create config with specific render episodes."""
-        return cls(render_episodes=render_episodes, **kwargs)
-
-    @classmethod
-    def render_none(cls, **kwargs) -> 'RunConfig':
-        """Factory method to create config that renders no episodes."""
-        return cls(render_episodes=(-1,), **kwargs)  # -1 will never match
-
 
 @dataclass(frozen=True)
 class EnvironmentConfig:
@@ -95,16 +81,3 @@ class Config:
     noise: NoiseConfig = field(default_factory=NoiseConfig)
     run: RunConfig = field(default_factory=RunConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
-
-    @classmethod
-    def default(cls) -> 'Config':
-        """Create default configuration."""
-        return cls()
-
-    @classmethod
-    def fast_training(cls) -> 'Config':
-        """Create configuration optimized for fast training (no rendering)."""
-        return cls(
-            run=RunConfig.render_none(num_envs=16),
-            training=TrainingConfig(min_experiences_before_training=256)
-        )

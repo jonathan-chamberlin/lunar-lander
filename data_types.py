@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import NamedTuple
 
+import numpy as np
 import torch as T
 
 
@@ -118,7 +119,6 @@ class ActionStatistics:
     @classmethod
     def from_actions(cls, actions_array) -> 'ActionStatistics':
         """Compute statistics from an array of actions."""
-        import numpy as np
         return cls(
             mean_magnitude=float(np.mean(np.abs(actions_array))),
             std=float(np.std(actions_array)),

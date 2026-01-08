@@ -187,15 +187,6 @@ class OUActionNoise:
         )
         return T.from_numpy(single_noise[0]).float()
 
-    # Aliases for backward compatibility
-    def generate_noise(self) -> T.Tensor:
-        """Alias for generate() - maintained for backward compatibility."""
-        return self.generate()
-
-    def generate_noise_single(self) -> T.Tensor:
-        """Alias for generate_single() - maintained for backward compatibility."""
-        return self.generate_single()
-
 
 def soft_update(
     source: nn.Module,

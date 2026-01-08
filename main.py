@@ -10,7 +10,6 @@ This module orchestrates the training loop using components from:
 """
 
 import logging
-import sys
 import time
 import warnings
 from typing import Optional
@@ -42,6 +41,42 @@ logger = logging.getLogger(__name__)
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
+
+
+def finalize_episode(
+    episode_num: int,
+    total_reward: float,
+    env_reward: float,
+    shaped_bonus: float,
+    steps: int,
+    actions_array: np.ndarray,
+    success_threshold: float,
+    diagnostics: DiagnosticsTracker,
+    replay_buffer: ReplayBuffer,
+    min_experiences: int,
+    rendered: bool = False
+) -> EpisodeResult:
+    """Create episode result, record it, print status, and track action stats."""
+    success = total_reward >= success_threshold
+    result = EpisodeResult(
+        episode_num=episode_num,
+        total_reward=total_reward,
+        env_reward=env_reward,
+        shaped_bonus=shaped_bonus,
+        steps=steps,
+        success=success
+    )
+
+    diagnostics.record_episode(result)
+
+    status = "SUCCESS" if success else "FAILURE"
+    rendered_tag = " | RENDERED" if rendered else ""
+    print(f"Run {episode_num} | {status}{rendered_tag} | Reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
+
+    if len(actions_array) > 0 and replay_buffer.is_ready(min_experiences):
+        diagnostics.record_action_stats(ActionStatistics.from_actions(actions_array))
+
+    return result
 
 
 def run_rendered_episode(
@@ -137,33 +172,29 @@ def run_rendered_episode(
     if user_quit:
         return None
 
-    # Compute episode results
+    # Compute and finalize episode
     env_reward = float(np.sum(rewards))
     total_reward = env_reward + shaped_bonus
-    success = total_reward >= config.environment.success_threshold
 
-    result = EpisodeResult(
+    return finalize_episode(
         episode_num=episode_num,
         total_reward=total_reward,
         env_reward=env_reward,
         shaped_bonus=shaped_bonus,
         steps=len(rewards),
-        success=success
+        actions_array=np.array(actions),
+        success_threshold=config.environment.success_threshold,
+        diagnostics=diagnostics,
+        replay_buffer=replay_buffer,
+        min_experiences=config.training.min_experiences_before_training,
+        rendered=True
     )
-
-    # Record action statistics
-    if (len(actions) > 0 and
-            replay_buffer.is_ready(config.training.min_experiences_before_training)):
-        actions_array = np.array(actions)
-        diagnostics.record_action_stats(ActionStatistics.from_actions(actions_array))
-
-    return result
 
 
 def main() -> None:
     """Main training loop."""
     # Initialize configuration
-    config = Config.default()
+    config = Config()
 
     # Start timer if timing is enabled
     start_time = time.time() if config.run.timing else None
@@ -211,11 +242,6 @@ def main() -> None:
                 if result is None:
                     user_quit = True
                     break
-
-                diagnostics.record_episode(result)
-
-                status = "SUCCESS" if result.success else "FAILURE"
-                print(f"Run {completed_episodes} | {status} | RENDERED | Reward: {result.total_reward:.1f} (env: {result.env_reward:.1f}, shaped: {result.shaped_bonus:.1f})")
 
                 completed_episodes += 1
                 continue
@@ -272,33 +298,21 @@ def main() -> None:
                     total_reward, env_reward, shaped_bonus, actions_array = \
                         episode_manager.get_episode_stats(i)
 
-                    success = total_reward >= config.environment.success_threshold
-
-                    result = EpisodeResult(
+                    finalize_episode(
                         episode_num=completed_episodes,
                         total_reward=total_reward,
                         env_reward=env_reward,
                         shaped_bonus=shaped_bonus,
                         steps=len(episode_manager.rewards[i]),
-                        success=success
+                        actions_array=actions_array,
+                        success_threshold=config.environment.success_threshold,
+                        diagnostics=diagnostics,
+                        replay_buffer=replay_buffer,
+                        min_experiences=config.training.min_experiences_before_training
                     )
 
-                    diagnostics.record_episode(result)
-
-                    status = "SUCCESS" if success else "FAILURE"
-                    print(f"Run {completed_episodes} | {status} | Reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
-
-                    # Record action statistics
-                    if (len(actions_array) > 0 and
-                            replay_buffer.is_ready(config.training.min_experiences_before_training)):
-                        diagnostics.record_action_stats(
-                            ActionStatistics.from_actions(actions_array)
-                        )
-
-                    # Reset tracking for this environment
                     episode_manager.reset_env(i)
                     noise.reset(i)
-
                     completed_episodes += 1
 
                     if completed_episodes >= config.run.num_episodes:

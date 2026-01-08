@@ -312,21 +312,11 @@ class DiagnosticsReporter:
             print(info_str)
 
     def _print_key_data(self) -> None:
-        """Print raw data lists for analysis."""
-        print("\n" + "=" * 80)
-        print("KEY DATA FOR ANALYSIS")
-        print("=" * 80)
-
+        """Print key data counts for analysis."""
         rewards = self.tracker.get_rewards()
-        print(f"\nReward list (last 50): {rewards[-50:]}")
-
-        if self.tracker.action_stats:
-            main_thrusters = [s.mean_main_thruster for s in self.tracker.action_stats]
-            print(f"\nMain thruster list (last 50): {main_thrusters[-50:]}")
-
-        if self.tracker.q_values:
-            print(f"\nQ-values list (last 50): {self.tracker.q_values[-50:]}")
-            print(f"\nActor losses list (last 50): {self.tracker.actor_losses[-50:]}")
+        print(f"\nData points collected: {len(rewards)} episodes, "
+              f"{len(self.tracker.action_stats)} action stats, "
+              f"{len(self.tracker.q_values)} training logs")
 
     def save_to_json(self, path: Path) -> None:
         """Save all tracked data to a JSON file.
@@ -341,20 +331,6 @@ class DiagnosticsReporter:
             json.dump(data, f, indent=2, default=str)
 
         logger.info(f"Diagnostics saved to {path}")
-
-    def log_episode(self, result: EpisodeResult, noise_scale: float) -> None:
-        """Log a single episode result.
-
-        Args:
-            result: The episode result
-            noise_scale: Current noise scale for exploration
-        """
-        status = "SUCCESS" if result.success else "FAILURE"
-        logger.info(
-            f"Episode {result.episode_num}: {status}, "
-            f"Reward: {result.total_reward:.1f} "
-            f"(env: {result.env_reward:.1f}, shaped: {result.shaped_bonus:.1f})"
-        )
 
     def log_training_update(
         self,
