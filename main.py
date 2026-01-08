@@ -84,21 +84,18 @@ def shape_reward(state, base_reward, done):
     leg1_contact = state[6]
     leg2_contact = state[7]
 
-    # Only reward active descent (not hovering)
-    # if (y_vel < -0.1):
-        # shaped_reward += 0.2
-    
+    # Reward shaping with reduced magnitudes to prevent dominating env rewards
     if y_pos < 0.25:
-        shaped_reward += 10
-    
+        shaped_reward += 2
+
     if (leg1_contact and not(leg2_contact)) or (not(leg1_contact) and leg2_contact):
-        shaped_reward += 50
-    
+        shaped_reward += 10
+
     if leg1_contact and leg2_contact:
-        shaped_reward += 100
-    
-    if y_vel < -0.05: 
-        shaped_reward += 5
+        shaped_reward += 20
+
+    if y_vel < -0.05:
+        shaped_reward += 1
 
 
     return shaped_reward
@@ -369,7 +366,9 @@ while completed_episodes < runs and not user_quit:
 
         # Check if episode completed (terminated OR truncated)
         if terminateds[i] or truncateds[i]:
-            total_reward = float(np.sum(env_rewards[i]))
+            env_reward = float(np.sum(env_rewards[i]))
+            shaped_bonus = env_shaped_bonus[i]
+            total_reward = env_reward + shaped_bonus
 
             print(f"Run {completed_episodes}")
             if total_reward >= 200:
@@ -386,7 +385,7 @@ while completed_episodes < runs and not user_quit:
                 episode_main_thruster.append(np.mean(actions_array[:, 0]))
                 episode_side_thruster.append(np.mean(actions_array[:, 1]))
 
-            print(f"total_reward_for_one_run: {total_reward} (shaped bonus: +{env_shaped_bonus[i]:.1f})")
+            print(f"total reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
             total_reward_for_alls_runs.append(total_reward)
 
             # Reset tracking for this env
