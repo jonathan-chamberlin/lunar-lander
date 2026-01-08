@@ -117,6 +117,7 @@ def run_rendered_episode(
         # Apply reward shaping
         shaped_reward = shape_reward(obs, reward, terminated)
         shaped_bonus += (shaped_reward - reward)
+
         # Store experience
         experience = Experience(
             state=state.detach().clone(),
@@ -253,214 +254,100 @@ def main() -> None:
             )
             next_states = T.from_numpy(next_observations).float()
 
-    # Process each environment
-    for i in range(num_envs):
-        # Track actions
-        env_actions[i].append(actions[i].detach().cpu().numpy())
+            # Process each environment
+            for i in range(config.run.num_envs):
+                # Compute shaped reward
+                shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i])
 
-        # Compute shaped reward
-        shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i])
-        env_shaped_bonus[i] += (shaped_reward - rewards[i])
+                # Record step
+                episode_manager.add_step(
+                    i,
+                    float(rewards[i]),
+                    shaped_reward,
+                    actions[i].detach().cpu().numpy()
+                )
 
-        # Store experience
-        experience = (states[i].detach().clone(), actions[i].detach().clone(),
-                     T.tensor(shaped_reward, dtype=T.float32), next_states[i].detach().clone(),
-                     T.tensor(terminateds[i]))
-        add_experience(experience)
+                # Store experience
+                experience = Experience(
+                    state=states[i].detach().clone(),
+                    action=actions[i].detach().clone(),
+                    reward=T.tensor(shaped_reward, dtype=T.float32),
+                    next_state=next_states[i].detach().clone(),
+                    done=T.tensor(terminateds[i])
+                )
+                replay_buffer.push(experience)
 
-        # Track original reward
-        env_rewards[i].append(float(rewards[i]))
+                # Check if episode completed
+                if terminateds[i] or truncateds[i]:
+                    total_reward, env_reward, shaped_bonus, actions_array = \
+                        episode_manager.get_episode_stats(i)
 
-        # Check if episode completed (terminated OR truncated)
-        if terminateds[i] or truncateds[i]:
-            env_reward = float(np.sum(env_rewards[i]))
-            shaped_bonus = env_shaped_bonus[i]
-            total_reward = env_reward + shaped_bonus
+                    success = total_reward >= config.environment.success_threshold
 
-            print(f"Run {completed_episodes}")
-            if total_reward >= 200:
-                successes_list.append(completed_episodes)
-                print("SUCCESS")
-            else:
-                print("FAILURE")
+                    result = EpisodeResult(
+                        episode_num=completed_episodes,
+                        total_reward=total_reward,
+                        env_reward=env_reward,
+                        shaped_bonus=shaped_bonus,
+                        steps=len(episode_manager.rewards[i]),
+                        success=success
+                    )
 
-            # Track action statistics
-            if len(env_actions[i]) > 0 and len(experiences) >= min_experiences_before_training:
-                actions_array = np.array(env_actions[i])
-                episode_action_means.append(np.mean(np.abs(actions_array)))
-                episode_action_stds.append(np.std(actions_array))
-                episode_main_thruster.append(np.mean(actions_array[:, 0]))
-                episode_side_thruster.append(np.mean(actions_array[:, 1]))
+                    diagnostics.record_episode(result)
 
-            print(f"total reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
-            total_reward_for_alls_runs.append(total_reward)
+                    print(f"Run {completed_episodes}")
+                    print("SUCCESS" if success else "FAILURE")
+                    print(f"total reward: {total_reward:.1f} "
+                          f"(env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
 
-            # Reset tracking for this env
-            env_rewards[i] = []
-            env_shaped_bonus[i] = 0.0
-            env_actions[i] = []
-            lunar_noise.reset(i)
+                    # Record action statistics
+                    if (len(actions_array) > 0 and
+                            replay_buffer.is_ready(config.training.min_experiences_before_training)):
+                        diagnostics.record_action_stats(
+                            ActionStatistics.from_actions(actions_array)
+                        )
 
-            completed_episodes += 1
+                    # Reset tracking for this environment
+                    episode_manager.reset_env(i)
+                    noise.reset(i)
 
-            # Stop if we've reached target runs
-            if completed_episodes >= runs:
-                break
+                    completed_episodes += 1
 
-    # Update states
-    states = next_states
-    observations = next_observations
-    steps_since_training += num_envs
+                    if completed_episodes >= config.run.num_episodes:
+                        break
 
-    # Training: run updates based on step count
-    if len(experiences) >= min_experiences_before_training:
-        if not training_started:
-            print(f">>> TRAINING STARTED at episode {completed_episodes} with {len(experiences)} experiences <<<")
-            training_started = True
+            # Update states
+            states = next_states
+            observations = next_observations
+            steps_since_training += config.run.num_envs
 
-        # Train proportionally to steps taken (roughly training_updates_per_episode per ~200 steps)
-        updates_to_do = max(1, steps_since_training // 4)  # ~50 updates per 200 steps
+            # Training updates
+            if replay_buffer.is_ready(config.training.min_experiences_before_training):
+                if not training_started:
+                    logger.info(
+                        f">>> TRAINING STARTED at episode {completed_episodes} "
+                        f"with {len(replay_buffer)} experiences <<<"
+                    )
+                    training_started = True
 
-        total_critic_loss = 0
-        total_actor_loss = 0
-        total_critic_grad = 0
-        total_actor_grad = 0
-        total_q = 0
-        actor_update_count = 0
+                # Train proportionally to steps taken
+                updates_to_do = max(1, steps_since_training // 4)
+                metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
+                steps_since_training = 0
 
-        for _ in range(updates_to_do):
-            c_loss, a_loss, c_grad, a_grad, avg_q = do_training_step()
-            total_critic_loss += c_loss
-            total_actor_loss += a_loss
-            total_critic_grad += c_grad
-            total_actor_grad += a_grad
-            total_q += avg_q
-            if a_loss != 0:
-                actor_update_count += 1
+                # Log training metrics periodically
+                if completed_episodes % 10 == 0:
+                    diagnostics.record_training_metrics(metrics)
+                    reporter.log_training_update(metrics, noise_scale)
 
-        steps_since_training = 0
+    # Print diagnostics summary
+    reporter.print_summary()
 
-        # Log training metrics periodically
-        if completed_episodes % 10 == 0 and updates_to_do > 0:
-            avg_c_loss = total_critic_loss / updates_to_do
-            avg_a_loss = total_actor_loss / max(actor_update_count, 1)
-            avg_q_val = total_q / updates_to_do
-
-            episode_q_values.append(avg_q_val)
-            episode_actor_losses.append(avg_a_loss)
-            episode_critic_losses.append(avg_c_loss)
-            episode_actor_grad_norms.append(total_actor_grad / max(actor_update_count, 1))
-            episode_critic_grad_norms.append(total_critic_grad / updates_to_do)
-
-            print(f"Training update - Critic Loss: {avg_c_loss:.4f}, Actor Loss: {avg_a_loss:.4f}, Avg Q: {avg_q_val:.3f}, Noise: {noise_scale:.3f}")
-
-# Close environments
-vec_env.close()
-render_env.close()
+    # Print elapsed time if timing is enabled
+    if start_time is not None:
+        elapsed_time = time.time() - start_time
+        print(f"\nTotal simulation time: {elapsed_time:.2f} seconds")
 
 
-# ===== COMPREHENSIVE DIAGNOSTIC OUTPUT =====
-print("\n--- DIAGNOSTIC CODE REACHED - PROCESSING RESULTS ---")
-import sys
-sys.stdout.flush()
-
-print("\n" + "="*80)
-print("TRAINING DIAGNOSTICS SUMMARY")
-print("="*80)
-
-# Reward statistics
-print(f"\n--- REWARD STATISTICS ---")
-print(f"Total episodes: {len(total_reward_for_alls_runs)}")
-print(f"Successes: {len(successes_list)} (episodes: {successes_list})")
-
-print(f"Success rate: {len(successes_list)/len(total_reward_for_alls_runs)*100:.1f}%")
-print(f"Mean reward: {np.mean(total_reward_for_alls_runs):.2f}")
-print(f"Max reward: {np.max(total_reward_for_alls_runs):.2f}")
-print(f"Min reward: {np.min(total_reward_for_alls_runs):.2f}")
-if len(total_reward_for_alls_runs) >= 50:
-    print(f"Final 50 episodes mean reward: {np.mean(total_reward_for_alls_runs[-50:]):.2f}")
-# Action statistics
-
-
-print(f"\n--- ACTION STATISTICS ---")
-if len(episode_main_thruster) > 0:
-    print(f"Episodes with training: {len(episode_main_thruster)}")
-    print(f"Mean main thruster (all episodes): {np.mean(episode_main_thruster):.3f}")
-    print(f"Mean side thruster (all episodes): {np.mean(episode_side_thruster):.3f}")
-    print(f"Mean action magnitude: {np.mean(episode_action_means):.3f}")
-    print(f"Mean action std: {np.mean(episode_action_stds):.3f}")
-
-    print(f"\nLast 50 episodes:")
-    print(f"  Main thruster: {np.mean(episode_main_thruster[-50:]):.3f}")
-    print(f"  Side thruster: {np.mean(episode_side_thruster[-50:]):.3f}")
-    print(f"  Action magnitude: {np.mean(episode_action_means[-50:]):.3f}")
-
-    # Check for blasting upward pattern
-    high_thruster_episodes = sum(1 for x in episode_main_thruster if x > 0.5)
-    print(f"\nEpisodes with high main thruster (>0.5): {high_thruster_episodes}/{len(episode_main_thruster)}")
-else:
-    print("No action data collected (training hasn't started yet)")
-
-
-# Q-value and loss statistics
-
-print(f"\n--- TRAINING METRICS ---")
-if len(episode_q_values) > 0:
-    print(f"Mean Q-value: {np.mean(episode_q_values):.3f}")
-    if len(episode_q_values) >= 10:
-        print(f"Q-value trend (first 10 vs last 10): {np.mean(episode_q_values[:10]):.3f} -> {np.mean(episode_q_values[-10:]):.3f}")
-    print(f"Mean actor loss: {np.mean(episode_actor_losses):.4f}")
-    print(f"Mean critic loss: {np.mean(episode_critic_losses):.4f}")
-    print(f"Mean actor gradient norm: {np.mean(episode_actor_grad_norms):.4f}")
-    print(f"Mean critic gradient norm: {np.mean(episode_critic_grad_norms):.4f}")
-
-    # Check for divergence patterns
-    high_actor_loss_episodes = sum(1 for x in episode_actor_losses if x > 1.0)
-    print(f"\nEpisodes with high actor loss (>1.0): {high_actor_loss_episodes}/{len(episode_actor_losses)}")
-else:
-    print("No training metrics collected yet")
-
-
-# Sample recent episode details
-print(f"\n--- LAST 10 EPISODES DETAIL ---")
-length = len(total_reward_for_alls_runs)
-if length > 5:
-    start_idx = len(total_reward_for_alls_runs) - 5
-else:
-    start_idx = length-1
-
-for i in range(start_idx, length-1):
-    reward = total_reward_for_alls_runs[i]
-    episode_num = i
-    status = "SUCCESS" if i in successes_list else "FAILURE"
-
-    info_str = f"Ep {episode_num}: {status}, Reward: {reward:.1f}"
-
-    # Calculate the correct index in the tracking lists
-    # (tracking starts later than episode 0 since training starts later)
-    tracking_idx = i - (len(total_reward_for_alls_runs) - len(episode_main_thruster))
-    if 0 <= tracking_idx < len(episode_main_thruster):
-        main = episode_main_thruster[tracking_idx]
-        side = episode_side_thruster[tracking_idx]
-        q_val = episode_q_values[tracking_idx] if tracking_idx < len(episode_q_values) else 0
-        info_str += f", Main: {main:.2f}, Side: {side:.2f}, Q: {q_val:.2f}"
-
-    print(info_str)
-
-# Key data section - printed once, outside the loop
-print("\n" + "="*80)
-print("KEY DATA FOR ANALYSIS")
-print("="*80)
-print(f"\nReward list (last 50): {total_reward_for_alls_runs[-50:]}")
-print(f"\nMain thruster list (last 50): {episode_main_thruster[-50:] if len(episode_main_thruster) >= 50 else episode_main_thruster}")
-print(f"\nQ-values list (last 50): {episode_q_values[-50:] if len(episode_q_values) >= 50 else episode_q_values}")
-print(f"\nActor losses list (last 50): {episode_actor_losses[-50:] if len(episode_actor_losses) >= 50 else episode_actor_losses}")
-
-print("\n" + "="*80)
-print("END OF DIAGNOSTICS")
-print("="*80)
-
-# Print elapsed time if timing is enabled
-if timing:
-    elapsed_time = time.time() - start_time
-    print(f"\nTotal simulation time: {elapsed_time:.2f} seconds")
+if __name__ == "__main__":
+    main()
