@@ -83,7 +83,6 @@ def run_rendered_episode(
     running = True
     user_quit = False
 
-    logger.info(f"Episode {episode_num} (RENDERED)")
 
     while running:
         # Handle pygame events
@@ -214,18 +213,9 @@ def main() -> None:
                     break
 
                 diagnostics.record_episode(result)
-                reporter.log_episode(result, compute_noise_scale(
-                    completed_episodes,
-                    config.noise.noise_scale_initial,
-                    config.noise.noise_scale_final,
-                    config.noise.noise_decay_episodes
-                ))
 
                 status = "SUCCESS" if result.success else "FAILURE"
-                print(f"Run {completed_episodes}")
-                print(status)
-                print(f"total_reward: {result.total_reward:.1f} "
-                      f"(env: {result.env_reward:.1f}, shaped: {result.shaped_bonus:.1f})")
+                print(f"Run {completed_episodes} | {status} | RENDERED | Reward: {result.total_reward:.1f} (env: {result.env_reward:.1f}, shaped: {result.shaped_bonus:.1f})")
 
                 completed_episodes += 1
                 continue
@@ -295,10 +285,8 @@ def main() -> None:
 
                     diagnostics.record_episode(result)
 
-                    print(f"Run {completed_episodes}")
-                    print("SUCCESS" if success else "FAILURE")
-                    print(f"total reward: {total_reward:.1f} "
-                          f"(env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
+                    status = "SUCCESS" if success else "FAILURE"
+                    print(f"Run {completed_episodes} | {status} | Reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
 
                     # Record action statistics
                     if (len(actions_array) > 0 and
