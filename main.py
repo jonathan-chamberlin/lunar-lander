@@ -103,12 +103,14 @@ def run_rendered_episode(
     episode_num: int,
     config: Config,
     diagnostics: DiagnosticsTracker,
-    font: pg.font.Font
+    font: pg.font.Font,
+    screen: pg.Surface,
+    clock: pg.time.Clock
 ) -> Optional[EpisodeResult]:
     """Run a single rendered episode.
 
     Args:
-        render_env: Gymnasium environment with rendering
+        render_env: Gymnasium environment with rgb_array rendering
         trainer: TD3 trainer instance
         noise: Noise generator for exploration
         replay_buffer: Experience replay buffer
@@ -116,6 +118,8 @@ def run_rendered_episode(
         config: Full configuration
         diagnostics: Diagnostics tracker
         font: Pygame font for rendering text overlay
+        screen: Pygame display surface
+        clock: Pygame clock for frame rate control
 
     Returns:
         EpisodeResult if episode completed, None if user quit
@@ -142,21 +146,13 @@ def run_rendered_episode(
     while running:
         # Handle pygame events
         for event in pg.event.get():
-            if event.type == 256:  # Window close
-                render_env.close()
+            if event.type == pg.QUIT:
                 running = False
                 user_quit = True
                 break
 
         if not running:
             break
-
-        # Render run number overlay
-        screen = pg.display.get_surface()
-        if screen is not None:
-            text_surface = font.render(f"Run: {episode_num}", True, config.display.font_color)
-            screen.blit(text_surface, (config.display.text_x, config.display.text_y))
-            pg.display.flip()
 
         # Generate action
         if episode_num < config.run.random_warmup_episodes:
@@ -175,6 +171,20 @@ def run_rendered_episode(
             action.detach().numpy()
         )
         next_state = T.from_numpy(next_obs).float()
+
+        # Render frame with overlay (no flicker since we control all rendering)
+        frame = render_env.render()  # Returns rgb_array
+        # Convert numpy array to pygame surface (need to transpose for pygame)
+        frame_surface = pg.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
+        screen.blit(frame_surface, (0, 0))
+
+        # Draw text overlay
+        text_surface = font.render(f"Run: {episode_num}", True, config.display.font_color)
+        screen.blit(text_surface, (config.display.text_x, config.display.text_y))
+
+        # Update display and control frame rate
+        pg.display.flip()
+        clock.tick(config.run.framerate)
 
         # Apply reward shaping
         shaped_reward = shape_reward(obs, reward, terminated)
@@ -237,6 +247,11 @@ def main() -> None:
     pg.font.init()
     font = pg.font.Font(None, config.display.font_size)
 
+    # Create pygame display for rendering (LunarLander is 600x400)
+    screen = pg.display.set_mode((600, 400))
+    pg.display.set_caption("Lunar Lander Training")
+    clock = pg.time.Clock()
+
     # Initialize components
     trainer = TD3Trainer(config.training, config.environment)
     replay_buffer = ReplayBuffer(config.training.buffer_size)
@@ -272,7 +287,9 @@ def main() -> None:
                     completed_episodes,
                     config,
                     diagnostics,
-                    font
+                    font,
+                    screen,
+                    clock
                 )
 
                 if result is None:

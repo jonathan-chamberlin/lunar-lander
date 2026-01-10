@@ -52,7 +52,8 @@ def create_environments(
     ])
 
     # Create single environment for rendered episodes
-    render_env = gym.make(env_config.env_name, render_mode="human")
+    # Use rgb_array mode so we control rendering and can add overlays without flicker
+    render_env = gym.make(env_config.env_name, render_mode="rgb_array")
     render_env.metadata["render_fps"] = run_config.framerate
 
     logger.info(f"Created vectorized env with {run_config.num_envs} parallel environments")
