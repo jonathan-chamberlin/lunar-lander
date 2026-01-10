@@ -165,6 +165,7 @@ class EpisodeManager:
         self.rewards: list[list[float]] = [[] for _ in range(self.num_envs)]
         self.shaped_bonuses: list[float] = [0.0 for _ in range(self.num_envs)]
         self.actions: list[list[np.ndarray]] = [[] for _ in range(self.num_envs)]
+        self.observations: list[list[np.ndarray]] = [[] for _ in range(self.num_envs)]
 
     def reset_env(self, env_idx: int) -> None:
         """Reset tracking for a single environment.
@@ -175,13 +176,15 @@ class EpisodeManager:
         self.rewards[env_idx] = []
         self.shaped_bonuses[env_idx] = 0.0
         self.actions[env_idx] = []
+        self.observations[env_idx] = []
 
     def add_step(
         self,
         env_idx: int,
         reward: float,
         shaped_reward: float,
-        action: np.ndarray
+        action: np.ndarray,
+        observation: np.ndarray
     ) -> None:
         """Record a step for an environment.
 
@@ -190,26 +193,29 @@ class EpisodeManager:
             reward: Original environment reward
             shaped_reward: Shaped reward value
             action: Action taken
+            observation: State observation at this step
         """
         self.rewards[env_idx].append(reward)
         self.shaped_bonuses[env_idx] += (shaped_reward - reward)
         self.actions[env_idx].append(action)
+        self.observations[env_idx].append(observation)
 
     def get_episode_stats(
         self,
         env_idx: int
-    ) -> Tuple[float, float, float, np.ndarray]:
+    ) -> Tuple[float, float, float, np.ndarray, np.ndarray]:
         """Get episode statistics for a completed environment.
 
         Args:
             env_idx: Index of the environment
 
         Returns:
-            Tuple of (total_reward, env_reward, shaped_bonus, actions_array)
+            Tuple of (total_reward, env_reward, shaped_bonus, actions_array, observations_array)
         """
         env_reward = float(np.sum(self.rewards[env_idx]))
         shaped_bonus = self.shaped_bonuses[env_idx]
         total_reward = env_reward + shaped_bonus
         actions_array = np.array(self.actions[env_idx])
+        observations_array = np.array(self.observations[env_idx])
 
-        return total_reward, env_reward, shaped_bonus, actions_array
+        return total_reward, env_reward, shaped_bonus, actions_array, observations_array

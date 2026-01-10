@@ -44,11 +44,17 @@ Now i want to be able to time my simulation to benchmark how fast it is to do 10
 
 (DONE) Here's waht changed. It is a big improvement. I rendered runs 100-105, 200-205, 300-305, and 395-399. The runs around 100 it descended and crashed. Runs around 200 actually landed. Runs around 300 actually crashed on the side, and runs around 400 it just tilted sideways and crashed fast, which is bad. Now analyze why the agent did so well around runs 200, but got worse as it progressed. Does it have something to do with the learning parameters? Here is the print statement for this code:
 
-Run code again and see if this happened:
-Here's what happened. It is a big improvement. I rendered runs 100-105, 200-205, 300-305, and 395-399. The runs around 100 it descended and crashed. Runs around 200 just hovered near it's starting point. Runs around 300 it slowly lowered its in a controlled manner but the run ended before it landed, and runs around 400 it just tilted sideways and crashed fast, which is bad. Now analyze why the agent did so well around runs 200, but got worse as it progressed. 
-Here is the print statement for this code: <>
+(DONE) Run code again and see if this happened:
+(DONE)Here's what happened. It is a big improvement. I rendered runs 100-105, 200-205, 300-305, and 395-399. The runs around 100 it descended and crashed. Runs around 200 just hovered near it's starting point. Runs around 300 it slowly lowered its in a controlled manner but the run ended before it landed, and runs around 400 it just tilted sideways and crashed fast, which is bad. Now analyze why the agent did so well around runs 200, but got worse as it progressed. 
+(DONE)Here is the print statement for this code: <>
 
-For a while I've been running my simulation, and telling you something like <>The runs around 100 it descended and crashed. Runs around 200 just hovered near it's starting point. Runs around 300 it slowly lowered its in a controlled manner but the run ended before it landed, and runs around 400 it just tilted sideways and crashed fast, which is bad. Now analyze why the agent did so well around runs 200, but got worse as it progressed. </> Within the loop that prints data for each run on line lines 312-327 in main.py, I want you to add logic to describe what happened. Here are the options, which I want you to come up with logic for: "Descended slowly and landed" "Descended slowly and didn't land" "Hovered in place" "Shot upward and off the screen" "Crashed quickly while vertically oriented" "Crashed quickly while tilted". Are there any other messages you think I should include? The reason for this is I want you to just be able to analyze the print statements without me telling you what happened, so you can still understand what happened and ultamitely improve the agent's behavior faster.
+(DONE)For a while I've been running my simulation, and telling you something like <>The runs around 100 it descended and crashed. Runs around 200 just hovered near it's starting point. Runs around 300 it slowly lowered its in a controlled manner but the run ended before it landed, and runs around 400 it just tilted sideways and crashed fast, which is bad. Now analyze why the agent did so well around runs 200, but got worse as it progressed. </> Within the loop that prints data for each run on line lines 312-327 in main.py, I want you to add logic to describe what happened. Here are the options, which I want you to come up with logic for: "Descended slowly and landed" "Descended slowly and didn't land" "Hovered in place" "Shot upward and off the screen" "Crashed quickly while vertically oriented" "Crashed quickly while tilted". Are there any other messages you think I should include? The reason for this is I want you to just be able to analyze the print statements without me telling you what happened, so you can still understand what happened and ultamitely improve the agent's behavior faster.
+
+On the bottom node terminal, tell it to "Resume with your plan." I stopped because I hit my rate limit
+
+
+
+
 
 Keep running my simulation to ensure it actually hits the benchmark of 200 reward for 100 episodes in a row
 

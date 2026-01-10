@@ -30,6 +30,7 @@ from network import OUActionNoise
 from replay_buffer import ReplayBuffer
 from trainer import TD3Trainer
 from data_types import Experience, EpisodeResult, ActionStatistics
+from behavior_analysis import BehaviorAnalyzer
 
 # Configure logging
 logging.basicConfig(
@@ -43,6 +44,10 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
 
+# Module-level behavior analyzer instance
+behavior_analyzer = BehaviorAnalyzer()
+
+
 def finalize_episode(
     episode_num: int,
     total_reward: float,
@@ -50,6 +55,9 @@ def finalize_episode(
     shaped_bonus: float,
     steps: int,
     actions_array: np.ndarray,
+    observations_array: np.ndarray,
+    terminated: bool,
+    truncated: bool,
     success_threshold: float,
     diagnostics: DiagnosticsTracker,
     replay_buffer: ReplayBuffer,
@@ -72,6 +80,13 @@ def finalize_episode(
     status = "SUCCESS" if success else "FAILURE"
     rendered_tag = " | RENDERED" if rendered else ""
     print(f"Run {episode_num} | {status}{rendered_tag} | Reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
+
+    # Analyze and print behaviors
+    if len(observations_array) > 0 and len(actions_array) > 0:
+        behavior_report = behavior_analyzer.analyze(
+            observations_array, actions_array, terminated, truncated
+        )
+        print(f"  Behaviors: {behavior_report}")
 
     if len(actions_array) > 0 and replay_buffer.is_ready(min_experiences):
         diagnostics.record_action_stats(ActionStatistics.from_actions(actions_array))
@@ -114,10 +129,12 @@ def run_rendered_episode(
 
     rewards = []
     actions = []
+    observations_list = []
     shaped_bonus = 0.0
     running = True
     user_quit = False
-
+    episode_terminated = False
+    episode_truncated = False
 
     while running:
         # Handle pygame events
@@ -141,6 +158,7 @@ def run_rendered_episode(
             action[1] = T.clamp(action[1], -1.0, 1.0)
 
         actions.append(action.detach().cpu().numpy())
+        observations_list.append(obs.copy())
 
         # Step environment
         next_obs, reward, terminated, truncated, info = render_env.step(
@@ -167,6 +185,8 @@ def run_rendered_episode(
         rewards.append(float(reward))
 
         if terminated or truncated:
+            episode_terminated = terminated
+            episode_truncated = truncated
             running = False
 
     if user_quit:
@@ -183,6 +203,9 @@ def run_rendered_episode(
         shaped_bonus=shaped_bonus,
         steps=len(rewards),
         actions_array=np.array(actions),
+        observations_array=np.array(observations_list),
+        terminated=episode_terminated,
+        truncated=episode_truncated,
         success_threshold=config.environment.success_threshold,
         diagnostics=diagnostics,
         replay_buffer=replay_buffer,
@@ -280,7 +303,8 @@ def main() -> None:
                     i,
                     float(rewards[i]),
                     shaped_reward,
-                    actions[i].detach().cpu().numpy()
+                    actions[i].detach().cpu().numpy(),
+                    observations[i].copy()
                 )
 
                 # Store experience
@@ -295,7 +319,7 @@ def main() -> None:
 
                 # Check if episode completed
                 if terminateds[i] or truncateds[i]:
-                    total_reward, env_reward, shaped_bonus, actions_array = \
+                    total_reward, env_reward, shaped_bonus, actions_array, observations_array = \
                         episode_manager.get_episode_stats(i)
 
                     finalize_episode(
@@ -305,6 +329,9 @@ def main() -> None:
                         shaped_bonus=shaped_bonus,
                         steps=len(episode_manager.rewards[i]),
                         actions_array=actions_array,
+                        observations_array=observations_array,
+                        terminated=terminateds[i],
+                        truncated=truncateds[i],
                         success_threshold=config.environment.success_threshold,
                         diagnostics=diagnostics,
                         replay_buffer=replay_buffer,
