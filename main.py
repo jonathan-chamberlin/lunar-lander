@@ -18,7 +18,7 @@ import numpy as np
 import pygame as pg
 import torch as T
 
-from config import Config, TrainingConfig, NoiseConfig, RunConfig, EnvironmentConfig
+from config import Config, TrainingConfig, NoiseConfig, RunConfig, EnvironmentConfig, DisplayConfig
 from diagnostics import DiagnosticsTracker, DiagnosticsReporter
 from environment import (
     create_environments,
@@ -102,7 +102,8 @@ def run_rendered_episode(
     replay_buffer: ReplayBuffer,
     episode_num: int,
     config: Config,
-    diagnostics: DiagnosticsTracker
+    diagnostics: DiagnosticsTracker,
+    font: pg.font.Font
 ) -> Optional[EpisodeResult]:
     """Run a single rendered episode.
 
@@ -114,6 +115,7 @@ def run_rendered_episode(
         episode_num: Current episode number
         config: Full configuration
         diagnostics: Diagnostics tracker
+        font: Pygame font for rendering text overlay
 
     Returns:
         EpisodeResult if episode completed, None if user quit
@@ -148,6 +150,13 @@ def run_rendered_episode(
 
         if not running:
             break
+
+        # Render run number overlay
+        screen = pg.display.get_surface()
+        if screen is not None:
+            text_surface = font.render(f"Run: {episode_num}", True, config.display.font_color)
+            screen.blit(text_surface, (config.display.text_x, config.display.text_y))
+            pg.display.flip()
 
         # Generate action
         if episode_num < config.run.random_warmup_episodes:
@@ -225,6 +234,8 @@ def main() -> None:
 
     # Initialize pygame
     pg.init()
+    pg.font.init()
+    font = pg.font.Font(None, config.display.font_size)
 
     # Initialize components
     trainer = TD3Trainer(config.training, config.environment)
@@ -260,7 +271,8 @@ def main() -> None:
                     replay_buffer,
                     completed_episodes,
                     config,
-                    diagnostics
+                    diagnostics,
+                    font
                 )
 
                 if result is None:

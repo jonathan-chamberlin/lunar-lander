@@ -73,6 +73,16 @@ class EnvironmentConfig:
     success_threshold: float = 200.0
 
 
+@dataclass(frozen=True)
+class DisplayConfig:
+    """Configuration for pygame display overlays."""
+
+    font_size: int = 30
+    font_color: Tuple[int, int, int] = (255, 255, 0)  # Yellow
+    text_x: int = 5
+    text_y: int = 5
+
+
 @dataclass
 class Config:
     """Master configuration combining all config sections."""
@@ -81,3 +91,4 @@ class Config:
     noise: NoiseConfig = field(default_factory=NoiseConfig)
     run: RunConfig = field(default_factory=RunConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
+    display: DisplayConfig = field(default_factory=DisplayConfig)
