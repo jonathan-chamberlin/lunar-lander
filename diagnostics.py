@@ -2,9 +2,10 @@
 
 import json
 import logging
+from collections import Counter
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 import numpy as np
 
@@ -14,8 +15,69 @@ from data_types import (
     TrainingMetrics,
     AggregatedTrainingMetrics
 )
+from behavior_analysis import BehaviorReport
 
 logger = logging.getLogger(__name__)
+
+
+# Behavior categories for grouping
+OUTCOME_CATEGORIES = {
+    'landed': ['LANDED_PERFECTLY', 'LANDED_SOFTLY', 'LANDED_HARD', 'LANDED_TILTED', 'LANDED_ONE_LEG'],
+    'crashed': ['CRASHED_FAST_VERTICAL', 'CRASHED_FAST_TILTED', 'CRASHED_SIDEWAYS', 'CRASHED_SPINNING'],
+    'timed_out': ['TIMED_OUT_HOVERING', 'TIMED_OUT_DESCENDING', 'TIMED_OUT_ASCENDING'],
+    'flew_off': ['FLEW_OFF_TOP', 'FLEW_OFF_LEFT', 'FLEW_OFF_RIGHT', 'FLEW_OFF_LEFT_TILTED', 'FLEW_OFF_RIGHT_TILTED'],
+}
+
+QUALITY_BEHAVIORS = {
+    'good': ['STAYED_UPRIGHT', 'STAYED_CENTERED', 'CONTROLLED_DESCENT', 'CONTROLLED_THROUGHOUT',
+             'SMOOTH_THRUST', 'TOUCHED_DOWN_CLEAN', 'DIRECT_APPROACH', 'GRADUAL_SLOWDOWN',
+             'REACHED_LOW_ALTITUDE', 'RECOVERED_FROM_TILT', 'RETURNED_TO_CENTER'],
+    'bad': ['NEVER_STABILIZED', 'LOST_CONTROL_LATE', 'OVERCORRECTED_TO_CRASH', 'SPINNING_UNCONTROLLED',
+            'FLIPPED_OVER', 'ERRATIC_THRUST', 'FREEFALL', 'NO_CONTACT_MADE', 'STAYED_HIGH'],
+}
+
+
+@dataclass
+class BehaviorStatistics:
+    """Comprehensive behavior statistics computed from tracked behavior reports."""
+
+    # Outcome distribution
+    total_episodes: int
+    outcome_counts: Dict[str, int]
+    outcome_category_counts: Dict[str, int]  # landed/crashed/timed_out/flew_off
+
+    # Behavior frequencies
+    behavior_counts: Dict[str, int]
+    top_behaviors: List[Tuple[str, int, float]]  # (behavior, count, percentage)
+
+    # Quality metrics
+    good_behavior_rate: float  # % of runs with good behaviors
+    bad_behavior_rate: float   # % of runs with bad behaviors
+
+    # Progress indicators
+    low_altitude_rate: float   # % reaching low altitude
+    contact_rate: float        # % making any leg contact
+    clean_touchdown_rate: float  # % with clean touchdown
+
+    # Flight quality
+    stayed_upright_rate: float
+    stayed_centered_rate: float
+    controlled_descent_rate: float
+    controlled_throughout_rate: float
+    never_stabilized_rate: float
+
+    # Batch trends (per 50 episodes)
+    batch_success_rates: List[float]
+    batch_outcome_distributions: List[Dict[str, float]]
+    batch_low_altitude_rates: List[float]
+    batch_contact_rates: List[float]
+
+    # Failure analysis
+    crash_type_distribution: Dict[str, float]
+
+    # Success correlation
+    success_behavior_rates: Dict[str, float]  # behavior rates in successful runs
+    failure_behavior_rates: Dict[str, float]  # behavior rates in failed runs
 
 
 @dataclass
@@ -61,6 +123,9 @@ class DiagnosticsTracker:
         # Action statistics per episode
         self.action_stats: List[ActionStatistics] = []
 
+        # Behavior reports per episode
+        self.behavior_reports: List[BehaviorReport] = []
+
         # Training metrics (recorded periodically, not every episode)
         self.q_values: List[float] = []
         self.actor_losses: List[float] = []
@@ -85,6 +150,15 @@ class DiagnosticsTracker:
             stats: Action statistics computed from episode actions
         """
         self.action_stats.append(stats)
+
+    def record_behavior(self, report: BehaviorReport, success: bool) -> None:
+        """Record behavior report for an episode.
+
+        Args:
+            report: Behavior report from behavior analysis
+            success: Whether the episode was successful
+        """
+        self.behavior_reports.append(report)
 
     def record_training_metrics(self, metrics: AggregatedTrainingMetrics) -> None:
         """Record aggregated training metrics.
@@ -184,6 +258,189 @@ class DiagnosticsTracker:
             mean_critic_grad_norm=mean_critic_grad
         )
 
+    def get_behavior_statistics(self, batch_size: int = 50) -> Optional[BehaviorStatistics]:
+        """Compute comprehensive behavior statistics.
+
+        Args:
+            batch_size: Size of batches for trend analysis
+
+        Returns:
+            BehaviorStatistics if behavior data exists, None otherwise
+        """
+        if not self.behavior_reports:
+            return None
+
+        num_episodes = len(self.behavior_reports)
+
+        # Count outcomes
+        outcome_counts: Counter = Counter()
+        for report in self.behavior_reports:
+            outcome_counts[report.outcome] += 1
+
+        # Count outcome categories
+        outcome_category_counts: Dict[str, int] = {cat: 0 for cat in OUTCOME_CATEGORIES}
+        for outcome, count in outcome_counts.items():
+            for category, outcomes in OUTCOME_CATEGORIES.items():
+                if outcome in outcomes:
+                    outcome_category_counts[category] += count
+                    break
+
+        # Count all behaviors
+        behavior_counts: Counter = Counter()
+        for report in self.behavior_reports:
+            for behavior in report.behaviors:
+                behavior_counts[behavior] += 1
+
+        # Top behaviors
+        top_behaviors = [
+            (behavior, count, count / num_episodes * 100)
+            for behavior, count in behavior_counts.most_common(15)
+        ]
+
+        # Quality metrics
+        good_count = sum(
+            1 for report in self.behavior_reports
+            if any(b in QUALITY_BEHAVIORS['good'] for b in report.behaviors)
+        )
+        bad_count = sum(
+            1 for report in self.behavior_reports
+            if any(b in QUALITY_BEHAVIORS['bad'] for b in report.behaviors)
+        )
+
+        # Progress indicators
+        low_altitude_count = behavior_counts.get('REACHED_LOW_ALTITUDE', 0)
+        contact_behaviors = ['TOUCHED_DOWN_CLEAN', 'SCRAPED_LEFT_LEG', 'SCRAPED_RIGHT_LEG',
+                            'BOUNCED', 'PROLONGED_ONE_LEG', 'MULTIPLE_TOUCHDOWNS']
+        contact_count = sum(
+            1 for report in self.behavior_reports
+            if any(b in contact_behaviors for b in report.behaviors)
+        )
+        clean_touchdown_count = behavior_counts.get('TOUCHED_DOWN_CLEAN', 0)
+
+        # Flight quality rates
+        stayed_upright_count = behavior_counts.get('STAYED_UPRIGHT', 0)
+        stayed_centered_count = behavior_counts.get('STAYED_CENTERED', 0)
+        controlled_descent_count = behavior_counts.get('CONTROLLED_DESCENT', 0)
+        controlled_throughout_count = behavior_counts.get('CONTROLLED_THROUGHOUT', 0)
+        never_stabilized_count = behavior_counts.get('NEVER_STABILIZED', 0)
+
+        # Batch trends
+        batch_success_rates: List[float] = []
+        batch_outcome_distributions: List[Dict[str, float]] = []
+        batch_low_altitude_rates: List[float] = []
+        batch_contact_rates: List[float] = []
+
+        num_batches = (num_episodes + batch_size - 1) // batch_size
+        for batch_idx in range(num_batches):
+            start = batch_idx * batch_size
+            end = min(start + batch_size, num_episodes)
+            batch_reports = self.behavior_reports[start:end]
+            batch_results = self.episode_results[start:end] if start < len(self.episode_results) else []
+            batch_len = len(batch_reports)
+
+            if batch_len == 0:
+                continue
+
+            # Success rate for batch
+            if batch_results:
+                batch_successes = sum(1 for r in batch_results if r.success)
+                batch_success_rates.append(batch_successes / len(batch_results) * 100)
+            else:
+                batch_success_rates.append(0.0)
+
+            # Outcome distribution for batch
+            batch_outcomes: Counter = Counter()
+            for report in batch_reports:
+                for category, outcomes in OUTCOME_CATEGORIES.items():
+                    if report.outcome in outcomes:
+                        batch_outcomes[category] += 1
+                        break
+            batch_outcome_distributions.append({
+                cat: batch_outcomes.get(cat, 0) / batch_len * 100
+                for cat in OUTCOME_CATEGORIES
+            })
+
+            # Low altitude rate for batch
+            batch_low_alt = sum(
+                1 for r in batch_reports
+                if 'REACHED_LOW_ALTITUDE' in r.behaviors
+            )
+            batch_low_altitude_rates.append(batch_low_alt / batch_len * 100)
+
+            # Contact rate for batch
+            batch_contact = sum(
+                1 for r in batch_reports
+                if any(b in contact_behaviors for b in r.behaviors)
+            )
+            batch_contact_rates.append(batch_contact / batch_len * 100)
+
+        # Crash type distribution
+        crash_outcomes = OUTCOME_CATEGORIES['crashed']
+        total_crashes = sum(outcome_counts.get(o, 0) for o in crash_outcomes)
+        crash_type_distribution = {}
+        if total_crashes > 0:
+            for crash_type in crash_outcomes:
+                crash_type_distribution[crash_type] = outcome_counts.get(crash_type, 0) / total_crashes * 100
+
+        # Success correlation - behavior rates in successful vs failed runs
+        success_behaviors: Counter = Counter()
+        failure_behaviors: Counter = Counter()
+        success_count = 0
+        failure_count = 0
+
+        for i, report in enumerate(self.behavior_reports):
+            if i < len(self.episode_results):
+                if self.episode_results[i].success:
+                    success_count += 1
+                    for behavior in report.behaviors:
+                        success_behaviors[behavior] += 1
+                else:
+                    failure_count += 1
+                    for behavior in report.behaviors:
+                        failure_behaviors[behavior] += 1
+
+        success_behavior_rates = {}
+        failure_behavior_rates = {}
+        key_behaviors = ['STAYED_UPRIGHT', 'STAYED_CENTERED', 'CONTROLLED_DESCENT',
+                        'REACHED_LOW_ALTITUDE', 'TOUCHED_DOWN_CLEAN', 'CONTROLLED_THROUGHOUT',
+                        'NEVER_STABILIZED', 'RAPID_DESCENT', 'HOVER_MAINTAINED',
+                        'ERRATIC_THRUST', 'SMOOTH_THRUST', 'NO_CONTACT_MADE']
+
+        for behavior in key_behaviors:
+            if success_count > 0:
+                success_behavior_rates[behavior] = success_behaviors.get(behavior, 0) / success_count * 100
+            else:
+                success_behavior_rates[behavior] = 0.0
+            if failure_count > 0:
+                failure_behavior_rates[behavior] = failure_behaviors.get(behavior, 0) / failure_count * 100
+            else:
+                failure_behavior_rates[behavior] = 0.0
+
+        return BehaviorStatistics(
+            total_episodes=num_episodes,
+            outcome_counts=dict(outcome_counts),
+            outcome_category_counts=outcome_category_counts,
+            behavior_counts=dict(behavior_counts),
+            top_behaviors=top_behaviors,
+            good_behavior_rate=good_count / num_episodes * 100,
+            bad_behavior_rate=bad_count / num_episodes * 100,
+            low_altitude_rate=low_altitude_count / num_episodes * 100,
+            contact_rate=contact_count / num_episodes * 100,
+            clean_touchdown_rate=clean_touchdown_count / num_episodes * 100,
+            stayed_upright_rate=stayed_upright_count / num_episodes * 100,
+            stayed_centered_rate=stayed_centered_count / num_episodes * 100,
+            controlled_descent_rate=controlled_descent_count / num_episodes * 100,
+            controlled_throughout_rate=controlled_throughout_count / num_episodes * 100,
+            never_stabilized_rate=never_stabilized_count / num_episodes * 100,
+            batch_success_rates=batch_success_rates,
+            batch_outcome_distributions=batch_outcome_distributions,
+            batch_low_altitude_rates=batch_low_altitude_rates,
+            batch_contact_rates=batch_contact_rates,
+            crash_type_distribution=crash_type_distribution,
+            success_behavior_rates=success_behavior_rates,
+            failure_behavior_rates=failure_behavior_rates,
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert all tracked data to a dictionary for serialization."""
         return {
@@ -274,6 +531,9 @@ class DiagnosticsReporter:
         else:
             print("No training metrics collected yet")
 
+        # Behavior statistics
+        self._print_behavior_statistics()
+
         # Recent episodes
         self._print_recent_episodes()
 
@@ -317,6 +577,101 @@ class DiagnosticsReporter:
         print(f"\nData points collected: {len(rewards)} episodes, "
               f"{len(self.tracker.action_stats)} action stats, "
               f"{len(self.tracker.q_values)} training logs")
+
+    def _print_behavior_statistics(self) -> None:
+        """Print comprehensive behavior analysis."""
+        stats = self.tracker.get_behavior_statistics()
+
+        print(f"\n--- BEHAVIOR ANALYSIS ---")
+        
+        if stats is None:
+            print("No behavior data collected")
+            return
+
+
+        print(f"Episodes analyzed: {stats.total_episodes}")
+
+        # Outcome distribution
+        print(f"\n  OUTCOME DISTRIBUTION:")
+        total = stats.total_episodes
+        for category in ['landed', 'crashed', 'timed_out', 'flew_off']:
+            count = stats.outcome_category_counts.get(category, 0)
+            pct = count / total * 100 if total > 0 else 0
+            print(f"    {category.upper():12} {count:4} ({pct:5.1f}%)")
+
+        # Detailed outcome breakdown
+        print(f"\n  OUTCOME DETAILS:")
+        sorted_outcomes = sorted(stats.outcome_counts.items(), key=lambda x: -x[1])
+        for outcome, count in sorted_outcomes[:8]:
+            pct = count / total * 100 if total > 0 else 0
+            print(f"    {outcome:24} {count:4} ({pct:5.1f}%)")
+
+        # Crash type breakdown (if any crashes)
+        if stats.crash_type_distribution:
+            print(f"\n  CRASH TYPE BREAKDOWN:")
+            for crash_type, pct in sorted(stats.crash_type_distribution.items(), key=lambda x: -x[1]):
+                print(f"    {crash_type:24} {pct:5.1f}%")
+
+        # Top behaviors
+        print(f"\n  TOP 15 BEHAVIORS:")
+        for behavior, count, pct in stats.top_behaviors:
+            print(f"    {behavior:28} {count:4} ({pct:5.1f}%)")
+
+        # Flight quality metrics
+        print(f"\n  FLIGHT QUALITY METRICS:")
+        print(f"    Stayed upright:          {stats.stayed_upright_rate:5.1f}%")
+        print(f"    Stayed centered:         {stats.stayed_centered_rate:5.1f}%")
+        print(f"    Controlled descent:      {stats.controlled_descent_rate:5.1f}%")
+        print(f"    Controlled throughout:   {stats.controlled_throughout_rate:5.1f}%")
+        print(f"    Never stabilized:        {stats.never_stabilized_rate:5.1f}%")
+
+        # Progress indicators
+        print(f"\n  PROGRESS INDICATORS:")
+        print(f"    Reached low altitude:    {stats.low_altitude_rate:5.1f}%")
+        print(f"    Made leg contact:        {stats.contact_rate:5.1f}%")
+        print(f"    Clean touchdown:         {stats.clean_touchdown_rate:5.1f}%")
+
+        # Quality summary
+        print(f"\n  QUALITY SUMMARY:")
+        print(f"    Runs with good behaviors: {stats.good_behavior_rate:5.1f}%")
+        print(f"    Runs with bad behaviors:  {stats.bad_behavior_rate:5.1f}%")
+
+        # Batch trends
+        if len(stats.batch_success_rates) > 1:
+            print(f"\n  BATCH TRENDS (per 50 episodes):")
+            print(f"    {'Batch':<8} {'Success%':>9} {'Landed%':>9} {'Crashed%':>9} {'LowAlt%':>9} {'Contact%':>9}")
+            print(f"    {'-'*8} {'-'*9} {'-'*9} {'-'*9} {'-'*9} {'-'*9}")
+
+            for i, (success_rate, outcome_dist, low_alt, contact) in enumerate(zip(
+                stats.batch_success_rates,
+                stats.batch_outcome_distributions,
+                stats.batch_low_altitude_rates,
+                stats.batch_contact_rates
+            )):
+                batch_label = f"{i*50+1}-{min((i+1)*50, stats.total_episodes)}"
+                landed_pct = outcome_dist.get('landed', 0)
+                crashed_pct = outcome_dist.get('crashed', 0)
+                print(f"    {batch_label:<8} {success_rate:>8.1f}% {landed_pct:>8.1f}% {crashed_pct:>8.1f}% {low_alt:>8.1f}% {contact:>8.1f}%")
+
+        # Success correlation
+        print(f"\n  BEHAVIOR CORRELATION WITH SUCCESS:")
+        print(f"    {'Behavior':<28} {'In Success':>12} {'In Failure':>12} {'Delta':>8}")
+        print(f"    {'-'*28} {'-'*12} {'-'*12} {'-'*8}")
+
+        # Sort by delta (difference between success and failure rates)
+        correlations = []
+        for behavior in stats.success_behavior_rates:
+            success_rate = stats.success_behavior_rates[behavior]
+            failure_rate = stats.failure_behavior_rates[behavior]
+            delta = success_rate - failure_rate
+            correlations.append((behavior, success_rate, failure_rate, delta))
+
+        # Sort by absolute delta to show most discriminating behaviors
+        correlations.sort(key=lambda x: -abs(x[3]))
+
+        for behavior, success_rate, failure_rate, delta in correlations:
+            delta_str = f"+{delta:.1f}%" if delta > 0 else f"{delta:.1f}%"
+            print(f"    {behavior:<28} {success_rate:>11.1f}% {failure_rate:>11.1f}% {delta_str:>8}")
 
     def save_to_json(self, path: Path) -> None:
         """Save all tracked data to a JSON file.

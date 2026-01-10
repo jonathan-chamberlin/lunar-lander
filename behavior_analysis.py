@@ -178,12 +178,32 @@ class BehaviorAnalyzer:
         one_leg = (final_leg1 > 0.5) != (final_leg2 > 0.5)
 
         # Check for flying off screen
-        if final_y > Thresholds.OFF_SCREEN_Y:
-            return "FLEW_OFF_TOP"
-        if final_x < -Thresholds.OFF_SCREEN_X:
-            return "FLEW_OFF_LEFT"
-        if final_x > Thresholds.OFF_SCREEN_X:
-            return "FLEW_OFF_RIGHT"
+        # Consider both position and velocity/tilt to determine direction
+        off_top = final_y > Thresholds.OFF_SCREEN_Y
+        off_left = final_x < -Thresholds.OFF_SCREEN_X
+        off_right = final_x > Thresholds.OFF_SCREEN_X
+
+        if off_top or off_left or off_right:
+            # Determine primary direction based on velocity and tilt
+            # If significantly tilted and moving sideways, prioritize sideways classification
+            is_tilted = abs(final_angle) > Thresholds.TILTED
+            moving_left = final_vx < -0.3
+            moving_right = final_vx > 0.3
+            moving_up = final_vy > 0.3
+
+            # Prioritize sideways if tilted and moving sideways
+            if is_tilted and (moving_left or off_left) and not moving_up:
+                return "FLEW_OFF_LEFT_TILTED"
+            if is_tilted and (moving_right or off_right) and not moving_up:
+                return "FLEW_OFF_RIGHT_TILTED"
+
+            # Standard off-screen classifications
+            if off_left:
+                return "FLEW_OFF_LEFT"
+            if off_right:
+                return "FLEW_OFF_RIGHT"
+            if off_top:
+                return "FLEW_OFF_TOP"
 
         # Check for successful landings
         if both_legs:

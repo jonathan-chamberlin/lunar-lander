@@ -34,9 +34,11 @@ One outcome is assigned per episode based on terminal conditions.
 | `CRASHED_FAST_TILTED` | High-speed impact while tilted | Terminated, velocity > 2.0, angle > 0.5 |
 | `CRASHED_SIDEWAYS` | Impact while nearly horizontal | Terminated, |angle| > 1.0 |
 | `CRASHED_SPINNING` | Impact while rotating rapidly | Terminated, |angular_vel| > 1.5 |
-| `FLEW_OFF_TOP` | Ascended beyond screen boundary | Final y > 1.5 |
-| `FLEW_OFF_LEFT` | Drifted beyond left boundary | Final x < -1.0 |
-| `FLEW_OFF_RIGHT` | Drifted beyond right boundary | Final x > 1.0 |
+| `FLEW_OFF_TOP` | Ascended beyond screen boundary | Final y > 1.5, moving upward |
+| `FLEW_OFF_LEFT` | Drifted beyond left boundary | Final x < -1.0, not tilted |
+| `FLEW_OFF_RIGHT` | Drifted beyond right boundary | Final x > 1.0, not tilted |
+| `FLEW_OFF_LEFT_TILTED` | Tilted and flew off left side | Tilted > 0.5 rad, moving/drifting left |
+| `FLEW_OFF_RIGHT_TILTED` | Tilted and flew off right side | Tilted > 0.5 rad, moving/drifting right |
 | `TIMED_OUT_HOVERING` | Episode truncated while maintaining altitude | Truncated, low velocity, altitude stable |
 | `TIMED_OUT_DESCENDING` | Episode truncated while actively descending | Truncated, vy < -0.1 |
 | `TIMED_OUT_ASCENDING` | Episode truncated while moving upward | Truncated, vy > 0.1 |

@@ -87,6 +87,7 @@ def finalize_episode(
             observations_array, actions_array, terminated, truncated
         )
         print(f"  Behaviors: {behavior_report}")
+        diagnostics.record_behavior(behavior_report, success)
 
     if len(actions_array) > 0 and replay_buffer.is_ready(min_experiences):
         diagnostics.record_action_stats(ActionStatistics.from_actions(actions_array))
