@@ -143,6 +143,16 @@ def run_rendered_episode(
     episode_terminated = False
     episode_truncated = False
 
+    # Pre-allocate surface for frame rendering (avoids allocation every frame)
+    frame_surface = pg.Surface((600, 400))
+
+    # Pre-allocate buffer for transposed frame data (600 width x 400 height x 3 RGB)
+    frame_buffer = np.empty((600, 400, 3), dtype=np.uint8)
+
+    # Pre-render text (same text every frame, no need to re-render)
+    text_surface = font.render(f"Run: {episode_num}", True, config.display.font_color)
+    text_pos = (config.display.text_x, config.display.text_y)
+
     while running:
         # Handle pygame events
         for event in pg.event.get():
@@ -173,14 +183,14 @@ def run_rendered_episode(
         next_state = T.from_numpy(next_obs).float()
 
         # Render frame with overlay (no flicker since we control all rendering)
-        frame = render_env.render()  # Returns rgb_array
-        # Convert numpy array to pygame surface (need to transpose for pygame)
-        frame_surface = pg.surfarray.make_surface(np.transpose(frame, (1, 0, 2)))
+        frame = render_env.render()  # Returns rgb_array (height, width, 3)
+        # Transpose into pre-allocated buffer and blit (pygame needs width-first format)
+        frame_buffer[:] = frame.transpose(1, 0, 2)
+        pg.surfarray.blit_array(frame_surface, frame_buffer)
         screen.blit(frame_surface, (0, 0))
 
-        # Draw text overlay
-        text_surface = font.render(f"Run: {episode_num}", True, config.display.font_color)
-        screen.blit(text_surface, (config.display.text_x, config.display.text_y))
+        # Draw text overlay (pre-rendered)
+        screen.blit(text_surface, text_pos)
 
         # Update display and control frame rate
         pg.display.flip()
