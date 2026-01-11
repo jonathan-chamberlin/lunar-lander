@@ -13,22 +13,23 @@ from config import NoiseConfig
 class ActorNetwork(nn.Module):
     """Actor network that maps states to continuous actions.
 
-    Architecture: state -> 400 -> LayerNorm -> 300 -> LayerNorm -> action
+    Architecture: state -> 256 -> LayerNorm -> 128 -> LayerNorm -> action
     Uses separate output heads for main and side thrusters with tanh activation.
+    Reduced network size for faster training (8D state space doesn't need large networks).
 
     Args:
         state_dim: Dimension of the state/observation space
         action_dim: Dimension of the action space
-        hidden1: Size of first hidden layer (default: 400)
-        hidden2: Size of second hidden layer (default: 300)
+        hidden1: Size of first hidden layer (default: 256, reduced from 400)
+        hidden2: Size of second hidden layer (default: 128, reduced from 300)
     """
 
     def __init__(
         self,
         state_dim: int,
         action_dim: int,
-        hidden1: int = 400,
-        hidden2: int = 300
+        hidden1: int = 256,
+        hidden2: int = 128
     ) -> None:
         super().__init__()
 
@@ -79,21 +80,22 @@ class ActorNetwork(nn.Module):
 class CriticNetwork(nn.Module):
     """Critic network that estimates Q-values for state-action pairs.
 
-    Architecture: state -> 400 -> LayerNorm -> concat(state_features, action) -> 300 -> LayerNorm -> Q-value
+    Architecture: state -> 256 -> LayerNorm -> concat(state_features, action) -> 128 -> LayerNorm -> Q-value
+    Reduced network size for faster training.
 
     Args:
         state_dim: Dimension of the state/observation space
         action_dim: Dimension of the action space
-        hidden1: Size of first hidden layer (default: 400)
-        hidden2: Size of second hidden layer (default: 300)
+        hidden1: Size of first hidden layer (default: 256, reduced from 400)
+        hidden2: Size of second hidden layer (default: 128, reduced from 300)
     """
 
     def __init__(
         self,
         state_dim: int,
         action_dim: int,
-        hidden1: int = 400,
-        hidden2: int = 300
+        hidden1: int = 256,
+        hidden2: int = 128
     ) -> None:
         super().__init__()
 

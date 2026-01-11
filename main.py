@@ -16,7 +16,7 @@ import sys
 import time
 import traceback
 import warnings
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 import pygame as pg
@@ -31,7 +31,7 @@ from environment import (
     EpisodeManager
 )
 from network import OUActionNoise
-from replay_buffer import ReplayBuffer
+from replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from trainer import TD3Trainer
 from data_types import Experience, EpisodeResult, ActionStatistics
 from behavior_analysis import BehaviorAnalyzer
@@ -64,9 +64,12 @@ def finalize_episode(
     truncated: bool,
     success_threshold: float,
     diagnostics: DiagnosticsTracker,
-    replay_buffer: ReplayBuffer,
+    replay_buffer: Union[ReplayBuffer, PrioritizedReplayBuffer],
     min_experiences: int,
-    rendered: bool = False
+    rendered: bool = False,
+    start_time: Optional[float] = None,
+    total_steps: int = 0,
+    total_training_updates: int = 0
 ) -> EpisodeResult:
     """Create episode result, record it, print status, and track action stats."""
     success = total_reward >= success_threshold
@@ -83,7 +86,24 @@ def finalize_episode(
 
     status = "SUCCESS" if success else "FAILURE"
     rendered_tag = " | RENDERED" if rendered else ""
-    print(f"Run {episode_num} | {status}{rendered_tag} | Reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
+
+    # Print speed metrics every 20 episodes
+    if start_time is not None and episode_num > 0 and episode_num % 20 == 0:
+        elapsed = time.time() - start_time
+        if elapsed > 0:
+            sps = total_steps / elapsed
+            ups = total_training_updates / elapsed
+            print(f"Run {episode_num} | {status}{rendered_tag} | Reward: {total_reward:.1f} | TIME: {elapsed:.1f}s | SPS: {sps:.0f} | UPS: {ups:.0f}")
+        else:
+            print(f"Run {episode_num} | {status}{rendered_tag} | Reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
+    else:
+        print(f"Run {episode_num} | {status}{rendered_tag} | Reward: {total_reward:.1f} (env: {env_reward:.1f}, shaped: {shaped_bonus:.1f})")
+
+    # Record batch speed metrics every 50 episodes for diagnostics
+    if start_time is not None and episode_num > 0 and episode_num % 50 == 0:
+        elapsed = time.time() - start_time
+        batch_num = episode_num // 50
+        diagnostics.record_batch_speed(batch_num, elapsed, total_steps, total_training_updates)
 
     # Analyze and print behaviors
     if len(observations_array) > 0 and len(actions_array) > 0:
@@ -103,14 +123,17 @@ def run_rendered_episode(
     render_env,
     trainer: TD3Trainer,
     noise: OUActionNoise,
-    replay_buffer: ReplayBuffer,
+    replay_buffer: Union[ReplayBuffer, PrioritizedReplayBuffer],
     episode_num: int,
     config: Config,
     diagnostics: DiagnosticsTracker,
     font: pg.font.Font,
     screen: pg.Surface,
-    clock: pg.time.Clock
-) -> Optional[EpisodeResult]:
+    clock: pg.time.Clock,
+    start_time: Optional[float] = None,
+    total_steps: int = 0,
+    total_training_updates: int = 0
+) -> tuple[Optional[EpisodeResult], int]:
     """Run a single rendered episode.
 
     Args:
@@ -126,7 +149,7 @@ def run_rendered_episode(
         clock: Pygame clock for frame rate control
 
     Returns:
-        EpisodeResult if episode completed, None if user quit
+        Tuple of (EpisodeResult or None if user quit, steps taken this episode)
     """
     obs, _ = render_env.reset()
     state = T.from_numpy(obs).float()
@@ -202,8 +225,9 @@ def run_rendered_episode(
         pg.display.flip()
         clock.tick(config.run.framerate)
 
-        # Apply reward shaping
-        shaped_reward = shape_reward(obs, reward, terminated)
+        # Apply reward shaping (pass step count for progressive penalty)
+        current_step = len(rewards)  # 0-indexed step count
+        shaped_reward = shape_reward(obs, reward, terminated, step=current_step)
         shaped_bonus += (shaped_reward - reward)
 
         # Store experience
@@ -225,19 +249,24 @@ def run_rendered_episode(
             episode_truncated = truncated
             running = False
 
+    episode_steps = len(rewards)
+
     if user_quit:
-        return None
+        return None, episode_steps
 
     # Compute and finalize episode
     env_reward = float(np.sum(rewards))
     total_reward = env_reward + shaped_bonus
 
-    return finalize_episode(
+    # Update total steps for this episode
+    updated_total_steps = total_steps + episode_steps
+
+    result = finalize_episode(
         episode_num=episode_num,
         total_reward=total_reward,
         env_reward=env_reward,
         shaped_bonus=shaped_bonus,
-        steps=len(rewards),
+        steps=episode_steps,
         actions_array=np.array(actions),
         observations_array=np.array(observations_list),
         terminated=episode_terminated,
@@ -246,8 +275,12 @@ def run_rendered_episode(
         diagnostics=diagnostics,
         replay_buffer=replay_buffer,
         min_experiences=config.training.min_experiences_before_training,
-        rendered=True
+        rendered=True,
+        start_time=start_time,
+        total_steps=updated_total_steps,
+        total_training_updates=total_training_updates
     )
+    return result, episode_steps
 
 
 def main() -> None:
@@ -274,7 +307,21 @@ def main() -> None:
 
     # Initialize components
     trainer = TD3Trainer(config.training, config.environment, config.run)
-    replay_buffer = ReplayBuffer(config.training.buffer_size)
+
+    # Create replay buffer (prioritized or uniform based on config)
+    if config.training.use_per:
+        replay_buffer = PrioritizedReplayBuffer(
+            capacity=config.training.buffer_size,
+            alpha=config.training.per_alpha,
+            beta_start=config.training.per_beta_start,
+            beta_end=config.training.per_beta_end,
+            epsilon=config.training.per_epsilon
+        )
+        logger.info("Using Prioritized Experience Replay")
+    else:
+        replay_buffer = ReplayBuffer(config.training.buffer_size)
+        logger.info("Using uniform Experience Replay")
+
     noise = OUActionNoise(config.noise, config.run.num_envs)
     diagnostics = DiagnosticsTracker()
     reporter = DiagnosticsReporter(diagnostics)
@@ -285,6 +332,7 @@ def main() -> None:
     # Training state
     completed_episodes = 0
     steps_since_training = 0
+    total_steps = 0  # Total environment steps for SPS calculation
     training_started = False
     user_quit = False
     error_occurred = None
@@ -314,7 +362,7 @@ def main() -> None:
 
                 # Check if current episode should be rendered
                 if completed_episodes in env_bundle.render_episodes:
-                    result = run_rendered_episode(
+                    result, episode_steps = run_rendered_episode(
                         env_bundle.render_env,
                         trainer,
                         noise,
@@ -324,8 +372,12 @@ def main() -> None:
                         diagnostics,
                         font,
                         screen,
-                        clock
+                        clock,
+                        start_time,
+                        total_steps,
+                        trainer.training_steps
                     )
+                    total_steps += episode_steps
 
                     if result is None:
                         user_quit = True
@@ -339,6 +391,11 @@ def main() -> None:
                                 f"with {len(replay_buffer)} experiences <<<"
                             )
                             training_started = True
+
+                        # Anneal PER beta towards 1.0
+                        if config.training.use_per:
+                            progress = completed_episodes / config.run.num_episodes
+                            replay_buffer.anneal_beta(progress)
 
                         # Train based on episode length (rendered episodes are ~200-1000 steps)
                         updates_to_do = max(1, result.steps // 4)
@@ -387,8 +444,9 @@ def main() -> None:
 
                 # Process each environment
                 for i in range(config.run.num_envs):
-                    # Compute shaped reward
-                    shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i])
+                    # Compute shaped reward (pass step count for progressive penalty)
+                    current_step = len(episode_manager.rewards[i])
+                    shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i], step=current_step)
 
                     # Record step
                     episode_manager.add_step(
@@ -427,7 +485,10 @@ def main() -> None:
                             success_threshold=config.environment.success_threshold,
                             diagnostics=diagnostics,
                             replay_buffer=replay_buffer,
-                            min_experiences=config.training.min_experiences_before_training
+                            min_experiences=config.training.min_experiences_before_training,
+                            start_time=start_time,
+                            total_steps=total_steps,
+                            total_training_updates=trainer.training_steps
                         )
 
                         episode_manager.reset_env(i)
@@ -441,6 +502,7 @@ def main() -> None:
                 states = next_states
                 observations = next_observations
                 steps_since_training += config.run.num_envs
+                total_steps += config.run.num_envs  # Track total steps for SPS
 
                 # Training updates
                 if replay_buffer.is_ready(config.training.min_experiences_before_training):
@@ -450,6 +512,11 @@ def main() -> None:
                             f"with {len(replay_buffer)} experiences <<<"
                         )
                         training_started = True
+
+                    # Anneal PER beta towards 1.0
+                    if config.training.use_per:
+                        progress = completed_episodes / config.run.num_episodes
+                        replay_buffer.anneal_beta(progress)
 
                     # Train proportionally to steps taken
                     updates_to_do = max(1, steps_since_training // 4)
@@ -524,10 +591,15 @@ def main() -> None:
         else:
             print("\nNo episodes completed - no diagnostics to show")
 
-        # Print elapsed time if timing is enabled
+        # Print elapsed time and speed metrics if timing is enabled
         if start_time is not None:
             elapsed_time = time.time() - start_time
             print(f"\nTotal simulation time: {elapsed_time:.2f} seconds")
+            if elapsed_time > 0 and total_steps > 0:
+                final_sps = total_steps / elapsed_time
+                final_ups = trainer.training_steps / elapsed_time
+                print(f"Average speed: {final_sps:.0f} steps/sec | {final_ups:.0f} updates/sec")
+                print(f"Total steps: {total_steps:,} | Total updates: {trainer.training_steps:,}")
 
         # Cleanup pygame
         try:

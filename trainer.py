@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import ExponentialLR
 
 from config import TrainingConfig, EnvironmentConfig, RunConfig
 from network import ActorNetwork, CriticNetwork, soft_update, hard_update
-from replay_buffer import ReplayBuffer
+from replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from data_types import ExperienceBatch, TrainingMetrics, AggregatedTrainingMetrics
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,12 @@ class TD3Trainer:
         self.config = training_config
         self.env_config = env_config
         self.run_config = run_config or RunConfig()
-        self.device = device or T.device('cpu')
+        # Auto-detect GPU if available for significant speedup
+        self.device = device or T.device('cuda' if T.cuda.is_available() else 'cpu')
+        if self.device.type == 'cuda':
+            logger.info(f"Using GPU: {T.cuda.get_device_name(0)}")
+        else:
+            logger.info("Using CPU (no GPU detected)")
 
         # Initialize networks
         self.actor = ActorNetwork(
@@ -109,20 +114,26 @@ class TD3Trainer:
         # Training state
         self.training_steps = 0
 
-    def train_step(self, batch: ExperienceBatch) -> TrainingMetrics:
+    def train_step(self, batch: ExperienceBatch) -> tuple[TrainingMetrics, T.Tensor]:
         """Perform one TD3 training update.
 
         Args:
             batch: Batch of experiences to train on
 
         Returns:
-            TrainingMetrics with loss values and gradient norms
+            Tuple of (TrainingMetrics with loss values, TD errors for PER)
         """
         states = batch.states.to(self.device)
         actions = batch.actions.to(self.device)
         rewards = batch.rewards.to(self.device)
         next_states = batch.next_states.to(self.device)
         dones = batch.dones.to(self.device)
+
+        # Get importance sampling weights (default to 1.0 for uniform sampling)
+        if batch.weights is not None:
+            weights = batch.weights.to(self.device).unsqueeze(-1)
+        else:
+            weights = T.ones(states.size(0), 1, device=self.device)
 
         # === CRITIC TRAINING ===
         with T.no_grad():
@@ -151,9 +162,15 @@ class TD3Trainer:
         current_q1 = self.critic_1(states, actions)
         current_q2 = self.critic_2(states, actions)
 
-        # Compute critic losses using Smooth L1 (Huber) for robustness to outliers
-        critic_loss_1 = F.smooth_l1_loss(current_q1, target_q_value)
-        critic_loss_2 = F.smooth_l1_loss(current_q2, target_q_value)
+        # Compute TD errors for PER priority updates
+        with T.no_grad():
+            td_errors = T.abs(current_q1 - target_q_value).squeeze(-1)
+
+        # Compute weighted critic losses (importance sampling for PER)
+        elementwise_loss_1 = F.smooth_l1_loss(current_q1, target_q_value, reduction='none')
+        elementwise_loss_2 = F.smooth_l1_loss(current_q2, target_q_value, reduction='none')
+        critic_loss_1 = (elementwise_loss_1 * weights).mean()
+        critic_loss_2 = (elementwise_loss_2 * weights).mean()
 
         # Update critic 1
         self.critic_1_optimizer.zero_grad()
@@ -214,17 +231,17 @@ class TD3Trainer:
             avg_q_value=avg_q,
             critic_grad_norm=critic_grad_norm,
             actor_grad_norm=actor_grad_norm
-        )
+        ), td_errors
 
     def train_on_buffer(
         self,
-        replay_buffer: ReplayBuffer,
+        replay_buffer,
         num_updates: int
     ) -> AggregatedTrainingMetrics:
         """Perform multiple training updates from the replay buffer.
 
         Args:
-            replay_buffer: Buffer to sample experiences from
+            replay_buffer: Buffer to sample experiences from (ReplayBuffer or PrioritizedReplayBuffer)
             num_updates: Number of gradient updates to perform
 
         Returns:
@@ -234,8 +251,13 @@ class TD3Trainer:
 
         for _ in range(num_updates):
             batch = replay_buffer.sample(self.config.batch_size)
-            metrics = self.train_step(batch)
+            metrics, td_errors = self.train_step(batch)
             metrics_list.append(metrics)
+
+            # Update priorities for PER
+            if batch.indices is not None:
+                priorities = td_errors.cpu().numpy() + self.config.per_epsilon
+                replay_buffer.update_priorities(batch.indices, priorities)
 
         return AggregatedTrainingMetrics.from_metrics_list(metrics_list)
 

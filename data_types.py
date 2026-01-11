@@ -25,6 +25,9 @@ class ExperienceBatch(NamedTuple):
     rewards: T.Tensor
     next_states: T.Tensor
     dones: T.Tensor
+    # PER fields (optional - None for uniform sampling)
+    weights: T.Tensor = None  # Importance sampling weights
+    indices: np.ndarray = None  # Indices for priority updates
 
 
 @dataclass

@@ -108,6 +108,17 @@ class DiagnosticsSummary:
     mean_critic_grad_norm: Optional[float]
 
 
+@dataclass
+class BatchSpeedMetrics:
+    """Speed metrics for a batch of episodes."""
+    batch_num: int
+    elapsed_time: float
+    total_steps: int
+    total_training_updates: int
+    sps: float  # Steps per second
+    ups: float  # Updates per second
+
+
 class DiagnosticsTracker:
     """Collects and stores training metrics without performing I/O.
 
@@ -132,6 +143,9 @@ class DiagnosticsTracker:
         self.critic_losses: List[float] = []
         self.actor_grad_norms: List[float] = []
         self.critic_grad_norms: List[float] = []
+
+        # Speed metrics per batch (recorded every 50 episodes)
+        self.batch_speed_metrics: List[BatchSpeedMetrics] = []
 
     def record_episode(self, result: EpisodeResult) -> None:
         """Record a completed episode result.
@@ -171,6 +185,33 @@ class DiagnosticsTracker:
         self.critic_losses.append(metrics.critic_loss)
         self.actor_grad_norms.append(metrics.actor_grad_norm)
         self.critic_grad_norms.append(metrics.critic_grad_norm)
+
+    def record_batch_speed(
+        self,
+        batch_num: int,
+        elapsed_time: float,
+        total_steps: int,
+        total_training_updates: int
+    ) -> None:
+        """Record speed metrics for a batch of episodes.
+
+        Args:
+            batch_num: Batch number (e.g., 1 for episodes 1-50, 2 for 51-100)
+            elapsed_time: Total elapsed time since training started
+            total_steps: Total environment steps taken so far
+            total_training_updates: Total training updates performed so far
+        """
+        sps = total_steps / elapsed_time if elapsed_time > 0 else 0.0
+        ups = total_training_updates / elapsed_time if elapsed_time > 0 else 0.0
+
+        self.batch_speed_metrics.append(BatchSpeedMetrics(
+            batch_num=batch_num,
+            elapsed_time=elapsed_time,
+            total_steps=total_steps,
+            total_training_updates=total_training_updates,
+            sps=sps,
+            ups=ups
+        ))
 
     def get_rewards(self) -> List[float]:
         """Get list of total rewards for all episodes."""
@@ -639,8 +680,14 @@ class DiagnosticsReporter:
         # Batch trends
         if len(stats.batch_success_rates) > 1:
             print(f"\n  BATCH TRENDS (per 50 episodes):")
-            print(f"    {'Batch':<8} {'Success%':>9} {'Landed%':>9} {'Crashed%':>9} {'LowAlt%':>9} {'Contact%':>9}")
-            print(f"    {'-'*8} {'-'*9} {'-'*9} {'-'*9} {'-'*9} {'-'*9}")
+            # Check if we have speed metrics
+            has_speed = len(self.tracker.batch_speed_metrics) > 0
+            if has_speed:
+                print(f"    {'Batch':<8} {'Success%':>9} {'Landed%':>9} {'Crashed%':>9} {'SPS':>8} {'UPS':>8}")
+                print(f"    {'-'*8} {'-'*9} {'-'*9} {'-'*9} {'-'*8} {'-'*8}")
+            else:
+                print(f"    {'Batch':<8} {'Success%':>9} {'Landed%':>9} {'Crashed%':>9} {'LowAlt%':>9} {'Contact%':>9}")
+                print(f"    {'-'*8} {'-'*9} {'-'*9} {'-'*9} {'-'*9} {'-'*9}")
 
             for i, (success_rate, outcome_dist, low_alt, contact) in enumerate(zip(
                 stats.batch_success_rates,
@@ -651,7 +698,12 @@ class DiagnosticsReporter:
                 batch_label = f"{i*50+1}-{min((i+1)*50, stats.total_episodes)}"
                 landed_pct = outcome_dist.get('landed', 0)
                 crashed_pct = outcome_dist.get('crashed', 0)
-                print(f"    {batch_label:<8} {success_rate:>8.1f}% {landed_pct:>8.1f}% {crashed_pct:>8.1f}% {low_alt:>8.1f}% {contact:>8.1f}%")
+
+                if has_speed and i < len(self.tracker.batch_speed_metrics):
+                    speed = self.tracker.batch_speed_metrics[i]
+                    print(f"    {batch_label:<8} {success_rate:>8.1f}% {landed_pct:>8.1f}% {crashed_pct:>8.1f}% {speed.sps:>7.0f} {speed.ups:>7.0f}")
+                else:
+                    print(f"    {batch_label:<8} {success_rate:>8.1f}% {landed_pct:>8.1f}% {crashed_pct:>8.1f}% {low_alt:>8.1f}% {contact:>8.1f}%")
 
         # Success correlation
         print(f"\n  BEHAVIOR CORRELATION WITH SUCCESS:")

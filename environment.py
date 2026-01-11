@@ -7,7 +7,7 @@ from typing import Generator, Tuple, Set, Optional
 
 import gymnasium as gym
 import numpy as np
-from gymnasium.vector import SyncVectorEnv
+from gymnasium.vector import AsyncVectorEnv
 
 from config import RunConfig, EnvironmentConfig
 
@@ -19,12 +19,12 @@ class EnvironmentBundle:
     """Bundle of environments for training.
 
     Attributes:
-        vec_env: Vectorized environment for parallel training
+        vec_env: Vectorized environment for parallel training (async for speed)
         render_env: Single environment for rendered episodes
         render_episodes: Set of episode numbers to render
     """
 
-    vec_env: SyncVectorEnv
+    vec_env: AsyncVectorEnv
     render_env: gym.Env
     render_episodes: Set[int]
 
@@ -46,7 +46,8 @@ def create_environments(
         EnvironmentBundle containing vectorized and render environments
     """
     # Create vectorized environment for fast parallel training
-    vec_env = SyncVectorEnv([
+    # AsyncVectorEnv runs environments in separate processes for true parallelization
+    vec_env = AsyncVectorEnv([
         lambda: gym.make(env_config.env_name)
         for _ in range(run_config.num_envs)
     ])
@@ -56,7 +57,7 @@ def create_environments(
     render_env = gym.make(env_config.env_name, render_mode="rgb_array")
     render_env.metadata["render_fps"] = run_config.framerate
 
-    logger.info(f"Created vectorized env with {run_config.num_envs} parallel environments")
+    logger.info(f"Created async vectorized env with {run_config.num_envs} parallel processes")
 
     bundle = EnvironmentBundle(
         vec_env=vec_env,
@@ -75,24 +76,30 @@ def create_environments(
 def shape_reward(
     state: np.ndarray,
     base_reward: float,
-    terminated: bool
+    terminated: bool,
+    step: int = 0
 ) -> float:
     """Apply reward shaping to provide intermediate learning signals.
 
     LunarLander state format:
     [x_pos, y_pos, x_vel, y_vel, angle, angular_vel, leg1_contact, leg2_contact]
 
-    Shaping rewards (gated on descending to prevent hovering):
-    - Time penalty: discourages hovering/long episodes
-    - Bonus for being low (y_pos < 0.25): only if descending
-    - Bonus for leg contact: only if descending
-    - Stability bonus: only if descending
+    Anti-hovering measures:
+    - Base time penalty: -0.3 per step (increased from -0.05)
+    - Progressive penalty: increases with episode length to create urgency
+    - Strict descent requirement: y_vel < -0.2 (not just -0.05)
+
+    Shaping rewards (gated on meaningful descent):
+    - Bonus for being low (y_pos < 0.25): only if actively descending
+    - Bonus for leg contact: only if actively descending
+    - Stability bonus: only if actively descending
     - Terminal landing bonus: +100 for successful landing with both legs
 
     Args:
         state: Current state observation
         base_reward: Original reward from environment
         terminated: Whether episode has terminated (for landing bonus)
+        step: Current step number in episode (for progressive penalty)
 
     Returns:
         Shaped reward value
@@ -105,11 +112,17 @@ def shape_reward(
     leg1_contact = state[6]
     leg2_contact = state[7]
 
-    # Time penalty to discourage hovering (-0.05 per step)
-    shaped_reward -= 0.05
+    # Solution 2 & 4: Progressive time penalty to discourage hovering
+    # Base penalty: -0.3 per step (6x larger than before)
+    # Progressive multiplier: increases over time to create landing urgency
+    # At step 0: -0.3, at step 200: -0.6, at step 400: -0.9
+    base_penalty = 0.3
+    progressive_multiplier = 1.0 + (step / 200.0)
+    shaped_reward -= base_penalty * progressive_multiplier
 
-    # All per-step bonuses ONLY apply if descending (prevents hover exploitation)
-    is_descending = y_vel < -0.05
+    # Solution 3: Stricter descent requirement (y_vel < -0.2 instead of -0.05)
+    # Agent must be actively descending, not just oscillating slightly
+    is_descending = y_vel < -0.2
 
     if is_descending:
         # Reward for being close to ground
