@@ -9,8 +9,11 @@ This module orchestrates the training loop using components from:
 - environment.py: Gymnasium environment management
 """
 
+import gc
 import logging
+import sys
 import time
+import traceback
 import warnings
 from typing import Optional
 
@@ -247,7 +250,11 @@ def run_rendered_episode(
 
 
 def main() -> None:
-    """Main training loop."""
+    """Main training loop with robust error handling.
+
+    Ensures diagnostics are printed even if an error occurs during training,
+    as long as at least one episode was completed.
+    """
     # Initialize configuration
     config = Config()
 
@@ -279,36 +286,162 @@ def main() -> None:
     steps_since_training = 0
     training_started = False
     user_quit = False
+    error_occurred = None
 
-    with create_environments(config.run, config.environment) as env_bundle:
-        # Initialize vectorized environment states
-        observations, _ = env_bundle.vec_env.reset()
-        states = T.from_numpy(observations).float()
+    # Maintenance interval (every N episodes, perform cleanup)
+    MAINTENANCE_INTERVAL = 100
 
-        # Episode manager for tracking per-environment state
-        episode_manager = EpisodeManager(config.run.num_envs)
+    try:
+        with create_environments(config.run, config.environment) as env_bundle:
+            # Initialize vectorized environment states
+            observations, _ = env_bundle.vec_env.reset()
+            states = T.from_numpy(observations).float()
 
-        while completed_episodes < config.run.num_episodes and not user_quit:
-            # Check if current episode should be rendered
-            if completed_episodes in env_bundle.render_episodes:
-                result = run_rendered_episode(
-                    env_bundle.render_env,
-                    trainer,
-                    noise,
-                    replay_buffer,
+            # Episode manager for tracking per-environment state
+            episode_manager = EpisodeManager(config.run.num_envs)
+
+            while completed_episodes < config.run.num_episodes and not user_quit:
+                # Periodic maintenance to prevent memory issues
+                if completed_episodes > 0 and completed_episodes % MAINTENANCE_INTERVAL == 0:
+                    # Pump pygame events to prevent "Out of memory" errors
+                    pg.event.pump()
+                    # Force garbage collection
+                    gc.collect()
+                    # Clear PyTorch cache if using CUDA
+                    if T.cuda.is_available():
+                        T.cuda.empty_cache()
+
+                # Check if current episode should be rendered
+                if completed_episodes in env_bundle.render_episodes:
+                    result = run_rendered_episode(
+                        env_bundle.render_env,
+                        trainer,
+                        noise,
+                        replay_buffer,
+                        completed_episodes,
+                        config,
+                        diagnostics,
+                        font,
+                        screen,
+                        clock
+                    )
+
+                    if result is None:
+                        user_quit = True
+                        break
+
+                    # Training after rendered episode (same as non-rendered path)
+                    if replay_buffer.is_ready(config.training.min_experiences_before_training):
+                        if not training_started:
+                            logger.info(
+                                f">>> TRAINING STARTED at episode {completed_episodes} "
+                                f"with {len(replay_buffer)} experiences <<<"
+                            )
+                            training_started = True
+
+                        # Train based on episode length (rendered episodes are ~200-1000 steps)
+                        updates_to_do = max(1, result.steps // 4)
+                        metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
+
+                        # Step learning rate schedulers
+                        trainer.step_schedulers()
+
+                        # Log training metrics periodically
+                        if completed_episodes % 10 == 0:
+                            noise_scale = compute_noise_scale(
+                                completed_episodes,
+                                config.noise.noise_scale_initial,
+                                config.noise.noise_scale_final,
+                                config.noise.noise_decay_episodes
+                            )
+                            diagnostics.record_training_metrics(metrics)
+                            reporter.log_training_update(metrics, noise_scale)
+
+                    completed_episodes += 1
+                    continue
+
+                # Calculate noise scale
+                noise_scale = compute_noise_scale(
                     completed_episodes,
-                    config,
-                    diagnostics,
-                    font,
-                    screen,
-                    clock
+                    config.noise.noise_scale_initial,
+                    config.noise.noise_scale_final,
+                    config.noise.noise_decay_episodes
                 )
 
-                if result is None:
-                    user_quit = True
-                    break
+                # Generate actions for all environments
+                if completed_episodes < config.run.random_warmup_episodes:
+                    actions = T.from_numpy(env_bundle.vec_env.action_space.sample()).float()
+                else:
+                    with T.no_grad():
+                        exploration_noise = noise.generate() * noise_scale
+                        actions = trainer.actor(states) + exploration_noise
+                        actions[:, 0] = T.clamp(actions[:, 0], -1.0, 1.0)
+                        actions[:, 1] = T.clamp(actions[:, 1], -1.0, 1.0)
 
-                # Training after rendered episode (same as non-rendered path)
+                # Step all environments
+                next_observations, rewards, terminateds, truncateds, infos = env_bundle.vec_env.step(
+                    actions.detach().numpy()
+                )
+                next_states = T.from_numpy(next_observations).float()
+
+                # Process each environment
+                for i in range(config.run.num_envs):
+                    # Compute shaped reward
+                    shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i])
+
+                    # Record step
+                    episode_manager.add_step(
+                        i,
+                        float(rewards[i]),
+                        shaped_reward,
+                        actions[i].detach().cpu().numpy(),
+                        observations[i].copy()
+                    )
+
+                    # Store experience
+                    experience = Experience(
+                        state=states[i].detach().clone(),
+                        action=actions[i].detach().clone(),
+                        reward=T.tensor(shaped_reward, dtype=T.float32),
+                        next_state=next_states[i].detach().clone(),
+                        done=T.tensor(terminateds[i])
+                    )
+                    replay_buffer.push(experience)
+
+                    # Check if episode completed
+                    if terminateds[i] or truncateds[i]:
+                        total_reward, env_reward, shaped_bonus, actions_array, observations_array = \
+                            episode_manager.get_episode_stats(i)
+
+                        finalize_episode(
+                            episode_num=completed_episodes,
+                            total_reward=total_reward,
+                            env_reward=env_reward,
+                            shaped_bonus=shaped_bonus,
+                            steps=len(episode_manager.rewards[i]),
+                            actions_array=actions_array,
+                            observations_array=observations_array,
+                            terminated=terminateds[i],
+                            truncated=truncateds[i],
+                            success_threshold=config.environment.success_threshold,
+                            diagnostics=diagnostics,
+                            replay_buffer=replay_buffer,
+                            min_experiences=config.training.min_experiences_before_training
+                        )
+
+                        episode_manager.reset_env(i)
+                        noise.reset(i)
+                        completed_episodes += 1
+
+                        if completed_episodes >= config.run.num_episodes:
+                            break
+
+                # Update states
+                states = next_states
+                observations = next_observations
+                steps_since_training += config.run.num_envs
+
+                # Training updates
                 if replay_buffer.is_ready(config.training.min_experiences_before_training):
                     if not training_started:
                         logger.info(
@@ -317,137 +450,89 @@ def main() -> None:
                         )
                         training_started = True
 
-                    # Train based on episode length (rendered episodes are ~200-1000 steps)
-                    updates_to_do = max(1, result.steps // 4)
+                    # Train proportionally to steps taken
+                    updates_to_do = max(1, steps_since_training // 4)
                     metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
+                    steps_since_training = 0
 
-                    # Step learning rate schedulers
+                    # Step learning rate schedulers (decay happens gradually over episodes)
                     trainer.step_schedulers()
 
                     # Log training metrics periodically
                     if completed_episodes % 10 == 0:
-                        noise_scale = compute_noise_scale(
-                            completed_episodes,
-                            config.noise.noise_scale_initial,
-                            config.noise.noise_scale_final,
-                            config.noise.noise_decay_episodes
-                        )
                         diagnostics.record_training_metrics(metrics)
                         reporter.log_training_update(metrics, noise_scale)
 
-                completed_episodes += 1
-                continue
+    except KeyboardInterrupt:
+        error_occurred = "KeyboardInterrupt"
+        logger.warning("\n\nTraining interrupted by user (Ctrl+C)")
 
-            # Calculate noise scale
-            noise_scale = compute_noise_scale(
-                completed_episodes,
-                config.noise.noise_scale_initial,
-                config.noise.noise_scale_final,
-                config.noise.noise_decay_episodes
-            )
+    except pg.error as e:
+        error_occurred = f"pygame.error: {e}"
+        logger.error(f"\n\nPygame error occurred: {e}")
+        logger.error("This often happens due to memory issues in long runs.")
 
-            # Generate actions for all environments
-            if completed_episodes < config.run.random_warmup_episodes:
-                actions = T.from_numpy(env_bundle.vec_env.action_space.sample()).float()
+    except MemoryError as e:
+        error_occurred = f"MemoryError: {e}"
+        logger.error(f"\n\nMemory error occurred: {e}")
+        logger.error("System ran out of memory.")
+
+    except T.cuda.OutOfMemoryError as e:
+        error_occurred = f"CUDA OutOfMemoryError: {e}"
+        logger.error(f"\n\nCUDA out of memory: {e}")
+
+    except RuntimeError as e:
+        error_occurred = f"RuntimeError: {e}"
+        logger.error(f"\n\nRuntime error occurred: {e}")
+        traceback.print_exc()
+
+    except Exception as e:
+        error_occurred = f"{type(e).__name__}: {e}"
+        logger.error(f"\n\nUnexpected error occurred: {e}")
+        traceback.print_exc()
+
+    finally:
+        # Always print diagnostics if we completed at least 1 episode
+        if completed_episodes > 0:
+            print("\n" + "=" * 80)
+            if error_occurred:
+                print(f"TRAINING TERMINATED EARLY DUE TO ERROR")
+                print(f"Error: {error_occurred}")
+                print(f"Completed {completed_episodes} episodes before error")
             else:
-                with T.no_grad():
-                    exploration_noise = noise.generate() * noise_scale
-                    actions = trainer.actor(states) + exploration_noise
-                    actions[:, 0] = T.clamp(actions[:, 0], -1.0, 1.0)
-                    actions[:, 1] = T.clamp(actions[:, 1], -1.0, 1.0)
+                print(f"TRAINING COMPLETED SUCCESSFULLY")
+                print(f"Completed {completed_episodes} episodes")
+            print("=" * 80)
 
-            # Step all environments
-            next_observations, rewards, terminateds, truncateds, infos = env_bundle.vec_env.step(
-                actions.detach().numpy()
-            )
-            next_states = T.from_numpy(next_observations).float()
+            # Print diagnostics summary
+            try:
+                reporter.print_summary()
+            except Exception as e:
+                logger.error(f"Failed to print full diagnostics: {e}")
+                # Try minimal diagnostics
+                try:
+                    print("\n--- MINIMAL DIAGNOSTICS (full report failed) ---")
+                    print(f"Total episodes: {completed_episodes}")
+                    print(f"Successes: {len(diagnostics.successes)}")
+                    if diagnostics.episode_results:
+                        rewards = [r.total_reward for r in diagnostics.episode_results]
+                        print(f"Mean reward: {np.mean(rewards):.2f}")
+                        print(f"Max reward: {np.max(rewards):.2f}")
+                except Exception:
+                    print("Could not print even minimal diagnostics")
+        else:
+            print("\nNo episodes completed - no diagnostics to show")
 
-            # Process each environment
-            for i in range(config.run.num_envs):
-                # Compute shaped reward
-                shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i])
+        # Print elapsed time if timing is enabled
+        if start_time is not None:
+            elapsed_time = time.time() - start_time
+            print(f"\nTotal simulation time: {elapsed_time:.2f} seconds")
 
-                # Record step
-                episode_manager.add_step(
-                    i,
-                    float(rewards[i]),
-                    shaped_reward,
-                    actions[i].detach().cpu().numpy(),
-                    observations[i].copy()
-                )
-
-                # Store experience
-                experience = Experience(
-                    state=states[i].detach().clone(),
-                    action=actions[i].detach().clone(),
-                    reward=T.tensor(shaped_reward, dtype=T.float32),
-                    next_state=next_states[i].detach().clone(),
-                    done=T.tensor(terminateds[i])
-                )
-                replay_buffer.push(experience)
-
-                # Check if episode completed
-                if terminateds[i] or truncateds[i]:
-                    total_reward, env_reward, shaped_bonus, actions_array, observations_array = \
-                        episode_manager.get_episode_stats(i)
-
-                    finalize_episode(
-                        episode_num=completed_episodes,
-                        total_reward=total_reward,
-                        env_reward=env_reward,
-                        shaped_bonus=shaped_bonus,
-                        steps=len(episode_manager.rewards[i]),
-                        actions_array=actions_array,
-                        observations_array=observations_array,
-                        terminated=terminateds[i],
-                        truncated=truncateds[i],
-                        success_threshold=config.environment.success_threshold,
-                        diagnostics=diagnostics,
-                        replay_buffer=replay_buffer,
-                        min_experiences=config.training.min_experiences_before_training
-                    )
-
-                    episode_manager.reset_env(i)
-                    noise.reset(i)
-                    completed_episodes += 1
-
-                    if completed_episodes >= config.run.num_episodes:
-                        break
-
-            # Update states
-            states = next_states
-            observations = next_observations
-            steps_since_training += config.run.num_envs
-
-            # Training updates
-            if replay_buffer.is_ready(config.training.min_experiences_before_training):
-                if not training_started:
-                    logger.info(
-                        f">>> TRAINING STARTED at episode {completed_episodes} "
-                        f"with {len(replay_buffer)} experiences <<<"
-                    )
-                    training_started = True
-
-                # Train proportionally to steps taken
-                updates_to_do = max(1, steps_since_training // 4)
-                metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
-                steps_since_training = 0
-
-                # Step learning rate schedulers (decay happens gradually over episodes)
-                trainer.step_schedulers()
-
-                # Log training metrics periodically
-                if completed_episodes % 10 == 0:
-                    diagnostics.record_training_metrics(metrics)
-                    reporter.log_training_update(metrics, noise_scale)
-
-    # Print diagnostics summary
-    reporter.print_summary()
-
-    # Print elapsed time if timing is enabled
-    if start_time is not None:
-        elapsed_time = time.time() - start_time
-        print(f"\nTotal simulation time: {elapsed_time:.2f} seconds")
+        # Cleanup pygame
+        try:
+            pg.quit()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
