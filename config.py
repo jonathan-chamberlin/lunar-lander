@@ -6,22 +6,35 @@ from typing import Tuple
 class RunConfig:
     """Configuration for training runs."""
 
-    num_episodes: int = 500
+    num_episodes: int = 400
     num_envs: int = 8
     random_warmup_episodes: int = 5
     framerate: int = 600
     timing: bool = True
+
+    # Rendering options:
+    #   'none' - No episodes rendered (fastest training)
+    #   'all'  - All episodes rendered (slowest, but visual feedback)
+    #   'custom' - Only render episodes specified in render_episodes_custom
+    render_mode: str = 'none'
+    render_episodes_custom: Tuple[int, ...] = field(default_factory=tuple)
+
+    # Internal field set by __post_init__ based on render_mode
     render_episodes: Tuple[int, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
-        # Handle mutable default - render all episodes if not specified
-        if not self.render_episodes:
-            # Use object.__setattr__ because frozen=True
-            object.__setattr__(
-                self,
-                'render_episodes',
-                tuple(range(self.num_episodes))
-            )
+        # Set render_episodes based on render_mode
+        if self.render_mode == 'none':
+            episodes = tuple()
+        elif self.render_mode == 'all':
+            episodes = tuple(range(self.num_episodes))
+        elif self.render_mode == 'custom':
+            episodes = self.render_episodes_custom
+        else:
+            raise ValueError(f"Invalid render_mode: {self.render_mode}. Use 'none', 'all', or 'custom'")
+
+        # Use object.__setattr__ because frozen=True
+        object.__setattr__(self, 'render_episodes', episodes)
 
 
 @dataclass(frozen=True)
