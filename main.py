@@ -149,9 +149,10 @@ def run_rendered_episode(
     # Pre-allocate buffer for transposed frame data (600 width x 400 height x 3 RGB)
     frame_buffer = np.empty((600, 400, 3), dtype=np.uint8)
 
-    # Pre-render text (same text every frame, no need to re-render)
-    text_surface = font.render(f"Run: {episode_num}", True, config.display.font_color)
-    text_pos = (config.display.text_x, config.display.text_y)
+    # Pre-render text if overlay is enabled (same text every frame, no need to re-render)
+    if config.display.show_run_overlay:
+        text_surface = font.render(f"Run: {episode_num}", True, config.display.font_color)
+        text_pos = (config.display.text_x, config.display.text_y)
 
     while running:
         # Handle pygame events
@@ -189,8 +190,9 @@ def run_rendered_episode(
         pg.surfarray.blit_array(frame_surface, frame_buffer)
         screen.blit(frame_surface, (0, 0))
 
-        # Draw text overlay (pre-rendered)
-        screen.blit(text_surface, text_pos)
+        # Draw text overlay if enabled (pre-rendered)
+        if config.display.show_run_overlay:
+            screen.blit(text_surface, text_pos)
 
         # Update display and control frame rate
         pg.display.flip()
@@ -305,6 +307,30 @@ def main() -> None:
                 if result is None:
                     user_quit = True
                     break
+
+                # Training after rendered episode (same as non-rendered path)
+                if replay_buffer.is_ready(config.training.min_experiences_before_training):
+                    if not training_started:
+                        logger.info(
+                            f">>> TRAINING STARTED at episode {completed_episodes} "
+                            f"with {len(replay_buffer)} experiences <<<"
+                        )
+                        training_started = True
+
+                    # Train based on episode length (rendered episodes are ~200-1000 steps)
+                    updates_to_do = max(1, result.steps // 4)
+                    metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
+
+                    # Log training metrics periodically
+                    if completed_episodes % 10 == 0:
+                        noise_scale = compute_noise_scale(
+                            completed_episodes,
+                            config.noise.noise_scale_initial,
+                            config.noise.noise_scale_final,
+                            config.noise.noise_decay_episodes
+                        )
+                        diagnostics.record_training_metrics(metrics)
+                        reporter.log_training_update(metrics, noise_scale)
 
                 completed_episodes += 1
                 continue

@@ -2,7 +2,50 @@
 
 from dataclasses import dataclass, field
 from typing import Tuple
+@dataclass(frozen=True)
+class RunConfig:
+    """Configuration for training runs."""
 
+    num_episodes: int = 500
+    num_envs: int = 8
+    random_warmup_episodes: int = 5
+    framerate: int = 600
+    timing: bool = True
+    render_episodes: Tuple[int, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        # Handle mutable default - render all episodes if not specified
+        if not self.render_episodes:
+            # Use object.__setattr__ because frozen=True
+            object.__setattr__(
+                self,
+                'render_episodes',
+                tuple(range(self.num_episodes))
+            )
+
+
+@dataclass(frozen=True)
+class EnvironmentConfig:
+    """Configuration for the Gymnasium environment."""
+
+    env_name: str = "LunarLanderContinuous-v3"
+    state_dim: int = 8
+    action_dim: int = 2
+    success_threshold: float = 200.0
+
+
+@dataclass(frozen=True)
+class DisplayConfig:
+    """Configuration for pygame display overlays."""
+
+    # Set to True to show run number overlay on screen during rendering.
+    # Set to False to disable overlay and improve rendering performance (~50% faster).
+    show_run_overlay: bool = False
+
+    font_size: int = 30
+    font_color: Tuple[int, int, int] = (255, 255, 0)  # Yellow
+    text_x: int = 5
+    text_y: int = 5
 
 @dataclass(frozen=True)
 class TrainingConfig:
@@ -39,48 +82,6 @@ class NoiseConfig:
     noise_scale_initial: float = 1.0
     noise_scale_final: float = 0.2
     noise_decay_episodes: int = 300
-
-
-@dataclass(frozen=True)
-class RunConfig:
-    """Configuration for training runs."""
-
-    num_episodes: int = 400
-    num_envs: int = 8
-    random_warmup_episodes: int = 5
-    framerate: int = 600
-    timing: bool = True
-    render_episodes: Tuple[int, ...] = field(default_factory=tuple)
-
-    def __post_init__(self) -> None:
-        # Handle mutable default - render all episodes if not specified
-        if not self.render_episodes:
-            # Use object.__setattr__ because frozen=True
-            object.__setattr__(
-                self,
-                'render_episodes',
-                tuple(range(self.num_episodes))
-            )
-
-
-@dataclass(frozen=True)
-class EnvironmentConfig:
-    """Configuration for the Gymnasium environment."""
-
-    env_name: str = "LunarLanderContinuous-v3"
-    state_dim: int = 8
-    action_dim: int = 2
-    success_threshold: float = 200.0
-
-
-@dataclass(frozen=True)
-class DisplayConfig:
-    """Configuration for pygame display overlays."""
-
-    font_size: int = 30
-    font_color: Tuple[int, int, int] = (255, 255, 0)  # Yellow
-    text_x: int = 5
-    text_y: int = 5
 
 
 @dataclass
