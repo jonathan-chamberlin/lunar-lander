@@ -6,9 +6,9 @@ from typing import Tuple
 class RunConfig:
     """Configuration for training runs."""
 
-    num_episodes: int = 400
+    num_episodes: int = 5000
     num_envs: int = 8
-    random_warmup_episodes: int = 5
+    random_warmup_episodes: int = 15
     framerate: int = 600
     timing: bool = True
 
@@ -16,7 +16,7 @@ class RunConfig:
     #   'none' - No episodes rendered (fastest training)
     #   'all'  - All episodes rendered (slowest, but visual feedback)
     #   'custom' - Only render episodes specified in render_episodes_custom
-    render_mode: str = 'none'
+    render_mode: str = 'all'
     render_episodes_custom: Tuple[int, ...] = field(default_factory=tuple)
 
     # Internal field set by __post_init__ based on render_mode
@@ -44,7 +44,7 @@ class EnvironmentConfig:
     env_name: str = "LunarLanderContinuous-v3"
     state_dim: int = 8
     action_dim: int = 2
-    success_threshold: float = 200.0
+    success_threshold: float = 180.0
 
 
 @dataclass(frozen=True)
@@ -64,18 +64,18 @@ class DisplayConfig:
 class TrainingConfig:
     """Hyperparameters for TD3 training."""
 
-    actor_lr: float = 0.0001
-    critic_lr: float = 0.0003
+    actor_lr: float = 0.0005
+    critic_lr: float = 0.001
     gamma: float = 0.99
-    tau: float = 0.001
+    tau: float = 0.005
     batch_size: int = 256
     buffer_size: int = 1 << 16  # 65536
-    min_experiences_before_training: int = 500
+    min_experiences_before_training: int = 5000
     training_updates_per_episode: int = 50
-    gradient_clip_value: float = 1.0
+    gradient_clip_value: float = 10.0
 
     # TD3-specific parameters
-    policy_update_frequency: int = 2
+    policy_update_frequency: int = 3
     target_policy_noise: float = 0.1
     target_noise_clip: float = 0.3
 
@@ -85,7 +85,7 @@ class NoiseConfig:
     """Ornstein-Uhlenbeck noise parameters."""
 
     mu: Tuple[float, float] = (0.0, 0.0)
-    sigma: float = 0.1
+    sigma: float = 0.3
     theta: float = 0.2
     dt: float = 0.01
     x0: float = 0.0

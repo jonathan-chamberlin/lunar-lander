@@ -13,7 +13,7 @@ from config import NoiseConfig
 class ActorNetwork(nn.Module):
     """Actor network that maps states to continuous actions.
 
-    Architecture: state -> 400 -> 300 -> action
+    Architecture: state -> 400 -> LayerNorm -> 300 -> LayerNorm -> action
     Uses separate output heads for main and side thrusters with tanh activation.
 
     Args:
@@ -33,14 +33,26 @@ class ActorNetwork(nn.Module):
         super().__init__()
 
         self.layer1 = nn.Linear(state_dim, hidden1)
+        self.ln1 = nn.LayerNorm(hidden1)
         self.layer2 = nn.Linear(hidden1, hidden2)
+        self.ln2 = nn.LayerNorm(hidden2)
 
         # Separate output layers for each action dimension
         self.main_engine_layer = nn.Linear(hidden2, 1)  # Main engine [-1, 1]
         self.side_engine_layer = nn.Linear(hidden2, 1)  # Side engine [-1, 1]
 
-        # Initialize biases to 0 so tanh(0) = 0 (no thrust initially)
-        nn.init.constant_(self.main_engine_layer.bias, 0.0)
+        # Initialize weights with Xavier uniform for stable gradients
+        nn.init.xavier_uniform_(self.layer1.weight)
+        nn.init.xavier_uniform_(self.layer2.weight)
+        nn.init.xavier_uniform_(self.main_engine_layer.weight)
+        nn.init.xavier_uniform_(self.side_engine_layer.weight)
+
+        # Initialize biases to zero except main engine
+        nn.init.constant_(self.layer1.bias, 0.0)
+        nn.init.constant_(self.layer2.bias, 0.0)
+        # Main engine bias positive so agent starts with thrust tendency
+        # tanh(0.3) ≈ 0.29, giving initial upward thrust to counteract gravity
+        nn.init.constant_(self.main_engine_layer.bias, 0.3)
         nn.init.constant_(self.side_engine_layer.bias, 0.0)
 
     def forward(self, state: T.Tensor) -> T.Tensor:
@@ -52,8 +64,8 @@ class ActorNetwork(nn.Module):
         Returns:
             Action tensor of shape (batch_size, action_dim) or (action_dim,)
         """
-        x = F.relu(self.layer1(state))
-        x = F.relu(self.layer2(x))
+        x = F.relu(self.ln1(self.layer1(state)))
+        x = F.relu(self.ln2(self.layer2(x)))
 
         # Apply tanh activation for bounded actions
         main_engine = T.tanh(self.main_engine_layer(x))
@@ -67,7 +79,7 @@ class ActorNetwork(nn.Module):
 class CriticNetwork(nn.Module):
     """Critic network that estimates Q-values for state-action pairs.
 
-    Architecture: state -> 400 -> concat(state_features, action) -> 300 -> Q-value
+    Architecture: state -> 400 -> LayerNorm -> concat(state_features, action) -> 300 -> LayerNorm -> Q-value
 
     Args:
         state_dim: Dimension of the state/observation space
@@ -87,10 +99,22 @@ class CriticNetwork(nn.Module):
 
         # State processing stream
         self.state_layer = nn.Linear(state_dim, hidden1)
+        self.ln1 = nn.LayerNorm(hidden1)
         # Combined processing (state features + action)
         self.combined_layer = nn.Linear(hidden1 + action_dim, hidden2)
+        self.ln2 = nn.LayerNorm(hidden2)
         # Output single Q-value
         self.output_layer = nn.Linear(hidden2, 1)
+
+        # Initialize weights with Xavier uniform for stable gradients
+        nn.init.xavier_uniform_(self.state_layer.weight)
+        nn.init.xavier_uniform_(self.combined_layer.weight)
+        nn.init.xavier_uniform_(self.output_layer.weight)
+
+        # Initialize biases to zero
+        nn.init.constant_(self.state_layer.bias, 0.0)
+        nn.init.constant_(self.combined_layer.bias, 0.0)
+        nn.init.constant_(self.output_layer.bias, 0.0)
 
     def forward(self, state: T.Tensor, action: T.Tensor) -> T.Tensor:
         """Forward pass to compute Q-value from state-action pair.
@@ -102,9 +126,9 @@ class CriticNetwork(nn.Module):
         Returns:
             Q-value tensor of shape (batch_size, 1)
         """
-        state_features = F.relu(self.state_layer(state))
+        state_features = F.relu(self.ln1(self.state_layer(state)))
         combined = T.cat([state_features, action], dim=-1)
-        x = F.relu(self.combined_layer(combined))
+        x = F.relu(self.ln2(self.combined_layer(combined)))
         q_value = self.output_layer(x)
         return q_value
 

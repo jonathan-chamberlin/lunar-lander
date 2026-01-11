@@ -103,21 +103,30 @@ def shape_reward(
     leg1_contact = state[6]
     leg2_contact = state[7]
 
-    # Reward for being close to ground
+    angle = state[4]
+
+    # Reward for being close to ground (reduced from +2)
     if y_pos < 0.25:
+        shaped_reward += 0.5
+
+    # Reward for leg contact (reduced from +10)
+    if (leg1_contact and not leg2_contact) or (not leg1_contact and leg2_contact):
         shaped_reward += 2
 
-    # Reward for leg contact (encourages landing attempts)
-    if (leg1_contact and not leg2_contact) or (not leg1_contact and leg2_contact):
-        shaped_reward += 10
-
-    # Larger reward for stable landing (both legs)
+    # Larger reward for stable landing with both legs (reduced from +20)
     if leg1_contact and leg2_contact:
-        shaped_reward += 20
+        shaped_reward += 5
 
-    # Small reward for descending (discourages hovering)
+    # Small reward for descending (reduced from +1)
     if y_vel < -0.05:
-        shaped_reward += 1
+        shaped_reward += 0.2
+
+    # Stability bonus for staying upright (angle near 0)
+    # abs(angle) < 0.1 rad ≈ 5.7 degrees
+    if abs(angle) < 0.1:
+        shaped_reward += 0.3
+    elif abs(angle) < 0.2:
+        shaped_reward += 0.1
 
     return shaped_reward
 

@@ -265,7 +265,7 @@ def main() -> None:
     clock = pg.time.Clock()
 
     # Initialize components
-    trainer = TD3Trainer(config.training, config.environment)
+    trainer = TD3Trainer(config.training, config.environment, config.run)
     replay_buffer = ReplayBuffer(config.training.buffer_size)
     noise = OUActionNoise(config.noise, config.run.num_envs)
     diagnostics = DiagnosticsTracker()
@@ -320,6 +320,9 @@ def main() -> None:
                     # Train based on episode length (rendered episodes are ~200-1000 steps)
                     updates_to_do = max(1, result.steps // 4)
                     metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
+
+                    # Step learning rate schedulers
+                    trainer.step_schedulers()
 
                     # Log training metrics periodically
                     if completed_episodes % 10 == 0:
@@ -429,6 +432,9 @@ def main() -> None:
                 updates_to_do = max(1, steps_since_training // 4)
                 metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
                 steps_since_training = 0
+
+                # Step learning rate schedulers (decay happens gradually over episodes)
+                trainer.step_schedulers()
 
                 # Log training metrics periodically
                 if completed_episodes % 10 == 0:

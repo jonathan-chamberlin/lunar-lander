@@ -6,8 +6,9 @@ from typing import Optional
 import torch as T
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim.lr_scheduler import ExponentialLR
 
-from config import TrainingConfig, EnvironmentConfig
+from config import TrainingConfig, EnvironmentConfig, RunConfig
 from network import ActorNetwork, CriticNetwork, soft_update, hard_update
 from replay_buffer import ReplayBuffer
 from data_types import ExperienceBatch, TrainingMetrics, AggregatedTrainingMetrics
@@ -22,10 +23,12 @@ class TD3Trainer:
     - Clipped double Q-learning (two critics, take minimum)
     - Delayed policy updates (update actor less frequently than critics)
     - Target policy smoothing (add noise to target actions)
+    - Learning rate scheduling (exponential decay)
 
     Args:
         training_config: Training hyperparameters
         env_config: Environment configuration (state/action dimensions)
+        run_config: Run configuration (for LR scheduling based on num_episodes)
         device: Torch device to use (default: CPU)
     """
 
@@ -33,10 +36,12 @@ class TD3Trainer:
         self,
         training_config: TrainingConfig,
         env_config: EnvironmentConfig,
+        run_config: Optional[RunConfig] = None,
         device: Optional[T.device] = None
     ) -> None:
         self.config = training_config
         self.env_config = env_config
+        self.run_config = run_config or RunConfig()
         self.device = device or T.device('cpu')
 
         # Initialize networks
@@ -76,19 +81,30 @@ class TD3Trainer:
         hard_update(self.critic_1, self.target_critic_1)
         hard_update(self.critic_2, self.target_critic_2)
 
-        # Initialize optimizers
+        # Initialize optimizers with weight decay for regularization
         self.actor_optimizer = optim.Adam(
             self.actor.parameters(),
-            lr=training_config.actor_lr
+            lr=training_config.actor_lr,
+            weight_decay=1e-5
         )
         self.critic_1_optimizer = optim.Adam(
             self.critic_1.parameters(),
-            lr=training_config.critic_lr
+            lr=training_config.critic_lr,
+            weight_decay=1e-5
         )
         self.critic_2_optimizer = optim.Adam(
             self.critic_2.parameters(),
-            lr=training_config.critic_lr
+            lr=training_config.critic_lr,
+            weight_decay=1e-5
         )
+
+        # Learning rate schedulers - decay to 20% of initial LR over training
+        # gamma = 0.2^(1/num_episodes) gives final_lr = initial_lr * 0.2
+        num_episodes = self.run_config.num_episodes
+        lr_decay_gamma = 0.2 ** (1.0 / num_episodes) if num_episodes > 0 else 0.999
+        self.actor_scheduler = ExponentialLR(self.actor_optimizer, gamma=lr_decay_gamma)
+        self.critic_1_scheduler = ExponentialLR(self.critic_1_optimizer, gamma=lr_decay_gamma)
+        self.critic_2_scheduler = ExponentialLR(self.critic_2_optimizer, gamma=lr_decay_gamma)
 
         # Training state
         self.training_steps = 0
@@ -135,9 +151,9 @@ class TD3Trainer:
         current_q1 = self.critic_1(states, actions)
         current_q2 = self.critic_2(states, actions)
 
-        # Compute critic losses
-        critic_loss_1 = F.mse_loss(current_q1, target_q_value)
-        critic_loss_2 = F.mse_loss(current_q2, target_q_value)
+        # Compute critic losses using Smooth L1 (Huber) for robustness to outliers
+        critic_loss_1 = F.smooth_l1_loss(current_q1, target_q_value)
+        critic_loss_2 = F.smooth_l1_loss(current_q2, target_q_value)
 
         # Update critic 1
         self.critic_1_optimizer.zero_grad()
@@ -223,6 +239,12 @@ class TD3Trainer:
 
         return AggregatedTrainingMetrics.from_metrics_list(metrics_list)
 
+    def step_schedulers(self) -> None:
+        """Step learning rate schedulers. Call once per episode."""
+        self.actor_scheduler.step()
+        self.critic_1_scheduler.step()
+        self.critic_2_scheduler.step()
+
     def save(self, path: str) -> None:
         """Save model weights to file.
 
@@ -239,6 +261,9 @@ class TD3Trainer:
             'actor_optimizer': self.actor_optimizer.state_dict(),
             'critic_1_optimizer': self.critic_1_optimizer.state_dict(),
             'critic_2_optimizer': self.critic_2_optimizer.state_dict(),
+            'actor_scheduler': self.actor_scheduler.state_dict(),
+            'critic_1_scheduler': self.critic_1_scheduler.state_dict(),
+            'critic_2_scheduler': self.critic_2_scheduler.state_dict(),
             'training_steps': self.training_steps
         }, f"{path}.pt")
         logger.info(f"Model saved to {path}.pt")
@@ -260,6 +285,11 @@ class TD3Trainer:
         self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
         self.critic_1_optimizer.load_state_dict(checkpoint['critic_1_optimizer'])
         self.critic_2_optimizer.load_state_dict(checkpoint['critic_2_optimizer'])
+        # Load scheduler state if available (backwards compatible)
+        if 'actor_scheduler' in checkpoint:
+            self.actor_scheduler.load_state_dict(checkpoint['actor_scheduler'])
+            self.critic_1_scheduler.load_state_dict(checkpoint['critic_1_scheduler'])
+            self.critic_2_scheduler.load_state_dict(checkpoint['critic_2_scheduler'])
         self.training_steps = checkpoint['training_steps']
 
         logger.info(f"Model loaded from {path}.pt (step {self.training_steps})")
