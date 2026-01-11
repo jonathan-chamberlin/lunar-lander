@@ -75,23 +75,24 @@ def create_environments(
 def shape_reward(
     state: np.ndarray,
     base_reward: float,
-    done: bool
+    terminated: bool
 ) -> float:
     """Apply reward shaping to provide intermediate learning signals.
 
     LunarLander state format:
     [x_pos, y_pos, x_vel, y_vel, angle, angular_vel, leg1_contact, leg2_contact]
 
-    Shaping rewards:
-    - Bonus for being low (y_pos < 0.25): encourages descent
-    - Bonus for single leg contact: encourages landing attempt
-    - Larger bonus for both legs contact: encourages stable landing
-    - Small bonus for downward velocity: discourages hovering
+    Shaping rewards (gated on descending to prevent hovering):
+    - Time penalty: discourages hovering/long episodes
+    - Bonus for being low (y_pos < 0.25): only if descending
+    - Bonus for leg contact: only if descending
+    - Stability bonus: only if descending
+    - Terminal landing bonus: +100 for successful landing with both legs
 
     Args:
         state: Current state observation
         base_reward: Original reward from environment
-        done: Whether episode has terminated
+        terminated: Whether episode has terminated (for landing bonus)
 
     Returns:
         Shaped reward value
@@ -100,33 +101,40 @@ def shape_reward(
 
     y_pos = state[1]
     y_vel = state[3]
+    angle = state[4]
     leg1_contact = state[6]
     leg2_contact = state[7]
 
-    angle = state[4]
+    # Time penalty to discourage hovering (-0.05 per step)
+    shaped_reward -= 0.05
 
-    # Reward for being close to ground (reduced from +2)
-    if y_pos < 0.25:
-        shaped_reward += 0.5
+    # All per-step bonuses ONLY apply if descending (prevents hover exploitation)
+    is_descending = y_vel < -0.05
 
-    # Reward for leg contact (reduced from +10)
-    if (leg1_contact and not leg2_contact) or (not leg1_contact and leg2_contact):
-        shaped_reward += 2
+    if is_descending:
+        # Reward for being close to ground
+        if y_pos < 0.25:
+            shaped_reward += 0.5
 
-    # Larger reward for stable landing with both legs (reduced from +20)
-    if leg1_contact and leg2_contact:
-        shaped_reward += 5
+        # Reward for leg contact
+        if (leg1_contact and not leg2_contact) or (not leg1_contact and leg2_contact):
+            shaped_reward += 2
 
-    # Small reward for descending (reduced from +1)
-    if y_vel < -0.05:
-        shaped_reward += 0.2
+        # Reward for both legs contact
+        if leg1_contact and leg2_contact:
+            shaped_reward += 5
 
-    # Stability bonus for staying upright (angle near 0)
-    # abs(angle) < 0.1 rad ≈ 5.7 degrees
-    if abs(angle) < 0.1:
-        shaped_reward += 0.3
-    elif abs(angle) < 0.2:
-        shaped_reward += 0.1
+        # Stability bonus for staying upright (angle near 0)
+        if abs(angle) < 0.1:
+            shaped_reward += 0.3
+        elif abs(angle) < 0.2:
+            shaped_reward += 0.1
+
+    # Terminal landing bonus: big reward for successful landing
+    # Successful = terminated with both legs on ground (not a crash)
+    # Crashes give -100 from env, landings give +100, so base_reward > 0 means landed
+    if terminated and leg1_contact and leg2_contact and base_reward > 0:
+        shaped_reward += 100
 
     return shaped_reward
 

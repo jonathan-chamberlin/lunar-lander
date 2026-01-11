@@ -50,9 +50,13 @@ Now i want to be able to time my simulation to benchmark how fast it is to do 10
 
 (DONE)For a while I've been running my simulation, and telling you something like <>The runs around 100 it descended and crashed. Runs around 200 just hovered near it's starting point. Runs around 300 it slowly lowered its in a controlled manner but the run ended before it landed, and runs around 400 it just tilted sideways and crashed fast, which is bad. Now analyze why the agent did so well around runs 200, but got worse as it progressed. </> Within the loop that prints data for each run on line lines 312-327 in main.py, I want you to add logic to describe what happened. Here are the options, which I want you to come up with logic for: "Descended slowly and landed" "Descended slowly and didn't land" "Hovered in place" "Shot upward and off the screen" "Crashed quickly while vertically oriented" "Crashed quickly while tilted". Are there any other messages you think I should include? The reason for this is I want you to just be able to analyze the print statements without me telling you what happened, so you can still understand what happened and ultamitely improve the agent's behavior faster.
 
-Slow framerate and ensure that the behaviors printed actually describe what i see in the simulation. 
+(DONE) Slow framerate and ensure that the behaviors printed actually describe what i see in the simulation. 
+
+LEFT OFF: Copy and paste that huge print statement into claude. "Here are diagnostics for the current code. To what extent did this solve the hover explotation? Before answering, do analysis of the diagnostics, then use that analysis to inform your answer. Either way, after you do this, create a commit statement for the changes you made to solve the hover exploitation and the results they had."
 
 
+
+Fix this message that appeared after run 2397: "pygame.error: Out of memory"
 
 
 Keep running my simulation to ensure it actually hits the benchmark of 200 reward for 100 episodes in a row
