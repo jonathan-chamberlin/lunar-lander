@@ -35,6 +35,7 @@ from replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from trainer import TD3Trainer
 from data_types import Experience, EpisodeResult, ActionStatistics
 from behavior_analysis import BehaviorAnalyzer
+from charts import ChartGenerator
 
 # Configure logging
 logging.basicConfig(
@@ -328,6 +329,8 @@ def main() -> None:
 
     logger.info(f"Starting TD3 training for {config.run.num_episodes} episodes")
     logger.info(f"Using {config.run.num_envs} parallel environments")
+    if not config.run.training_enabled:
+        logger.warning("TRAINING DISABLED - running simulation only (for chart testing)")
 
     # Training state
     completed_episodes = 0
@@ -384,7 +387,7 @@ def main() -> None:
                         break
 
                     # Training after rendered episode (same as non-rendered path)
-                    if replay_buffer.is_ready(config.training.min_experiences_before_training):
+                    if config.run.training_enabled and replay_buffer.is_ready(config.training.min_experiences_before_training):
                         if not training_started:
                             logger.info(
                                 f">>> TRAINING STARTED at episode {completed_episodes} "
@@ -505,7 +508,7 @@ def main() -> None:
                 total_steps += config.run.num_envs  # Track total steps for SPS
 
                 # Training updates
-                if replay_buffer.is_ready(config.training.min_experiences_before_training):
+                if config.run.training_enabled and replay_buffer.is_ready(config.training.min_experiences_before_training):
                     if not training_started:
                         logger.info(
                             f">>> TRAINING STARTED at episode {completed_episodes} "
@@ -588,6 +591,13 @@ def main() -> None:
                         print(f"Max reward: {np.max(rewards):.2f}")
                 except Exception:
                     print("Could not print even minimal diagnostics")
+
+            # Generate training visualization charts
+            try:
+                chart_generator = ChartGenerator(diagnostics, batch_size=50)
+                chart_generator.generate_all(show=True)
+            except Exception as e:
+                logger.error(f"Failed to generate charts: {e}")
         else:
             print("\nNo episodes completed - no diagnostics to show")
 

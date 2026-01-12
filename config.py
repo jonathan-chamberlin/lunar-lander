@@ -11,6 +11,7 @@ class RunConfig:
     random_warmup_episodes: int = 5  # Reduced from 15 (good init bias helps)
     framerate: int = 60  # Reduced from 600 (realistic display rate)
     timing: bool = True
+    training_enabled: bool = False  # Set False to skip all network training (for testing)
 
     # Rendering options:
     #   'none' - No episodes rendered (fastest training)
