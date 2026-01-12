@@ -77,6 +77,7 @@ def shape_reward(
     state: np.ndarray,
     base_reward: float,
     terminated: bool,
+    action: np.ndarray,
     step: int = 0
 ) -> float:
     """Apply reward shaping to provide intermediate learning signals.
@@ -84,17 +85,22 @@ def shape_reward(
     LunarLander state format:
     [x_pos, y_pos, x_vel, y_vel, angle, angular_vel, leg1_contact, leg2_contact]
 
+    LunarLander action format:
+    [main_engine, side_engine] where side_engine in [-1, 1]
+
     Shaping rewards (gated on descending to prevent hovering):
     - Time penalty: -0.05 per step (discourages hovering/long episodes)
     - Bonus for being low (y_pos < 0.25): only if descending
     - Bonus for leg contact: only if descending
     - Stability bonus: only if descending
     - Terminal landing bonus: +100 for successful landing with both legs
+    - Sideways thrust penalty: -10 if using side thrusters while legs touching
 
     Args:
         state: Current state observation
         base_reward: Original reward from environment
         terminated: Whether episode has terminated (for landing bonus)
+        action: Action taken [main_engine, side_engine]
         step: Current step number in episode (unused, kept for API compatibility)
 
     Returns:
@@ -107,9 +113,14 @@ def shape_reward(
     angle = state[4]
     leg1_contact = state[6]
     leg2_contact = state[7]
+    side_thrust = action[1]
 
     # Time penalty to discourage hovering (-0.05 per step)
     shaped_reward -= 0.05
+
+    # Punish sideways thrusting while legs are on ground (prevents sliding exploit)
+    if (leg1_contact or leg2_contact) and abs(side_thrust) > 0.05:
+        shaped_reward -= 10
 
     # All per-step bonuses ONLY apply if descending (prevents hover exploitation)
     is_descending = y_vel < -0.05

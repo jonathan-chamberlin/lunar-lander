@@ -228,7 +228,7 @@ def run_rendered_episode(
 
         # Apply reward shaping (pass step count for progressive penalty)
         current_step = len(rewards)  # 0-indexed step count
-        shaped_reward = shape_reward(obs, reward, terminated, step=current_step)
+        shaped_reward = shape_reward(obs, reward, terminated, action.detach().numpy(), step=current_step)
         shaped_bonus += (shaped_reward - reward)
 
         # Store experience
@@ -449,7 +449,7 @@ def main() -> None:
                 for i in range(config.run.num_envs):
                     # Compute shaped reward (pass step count for progressive penalty)
                     current_step = len(episode_manager.rewards[i])
-                    shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i], step=current_step)
+                    shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i], actions[i].detach().numpy(), step=current_step)
 
                     # Record step
                     episode_manager.add_step(

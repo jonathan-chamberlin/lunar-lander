@@ -99,8 +99,13 @@ class ChartGenerator:
             return
 
         # Create figure with 2x3 subplot grid
-        fig, axes = plt.subplots(2, 3, figsize=(16, 10))
-        fig.suptitle(f'Training Progress - {num_episodes} Episodes', fontsize=14, fontweight='bold')
+        # Size fits XP laptop screens (1024x768), with constrained_layout for tight spacing
+        fig, axes = plt.subplots(
+            2, 3,
+            figsize=(9.5, 6.5),
+            constrained_layout=True
+        )
+        fig.suptitle(f'Training Progress - {num_episodes} Episodes', fontsize=12, fontweight='bold')
 
         # Generate each chart
         try:
@@ -139,8 +144,14 @@ class ChartGenerator:
             logger.warning(f"Failed to plot report card: {e}")
             axes[1, 2].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[1, 2].transAxes)
 
-        # Adjust layout
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        # Set minimum window size to prevent label overlap (in pixels)
+        # 950x650 is slightly larger than where labels would collide
+        try:
+            fig_manager = plt.get_current_fig_manager()
+            if hasattr(fig_manager, 'window'):
+                fig_manager.window.minsize(950, 650)
+        except Exception:
+            pass  # Not all backends support this
 
         # Save if path provided
         if save_path:
