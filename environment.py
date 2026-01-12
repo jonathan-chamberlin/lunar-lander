@@ -84,22 +84,18 @@ def shape_reward(
     LunarLander state format:
     [x_pos, y_pos, x_vel, y_vel, angle, angular_vel, leg1_contact, leg2_contact]
 
-    Anti-hovering measures:
-    - Base time penalty: -0.3 per step (increased from -0.05)
-    - Progressive penalty: increases with episode length to create urgency
-    - Strict descent requirement: y_vel < -0.2 (not just -0.05)
-
-    Shaping rewards (gated on meaningful descent):
-    - Bonus for being low (y_pos < 0.25): only if actively descending
-    - Bonus for leg contact: only if actively descending
-    - Stability bonus: only if actively descending
+    Shaping rewards (gated on descending to prevent hovering):
+    - Time penalty: -0.05 per step (discourages hovering/long episodes)
+    - Bonus for being low (y_pos < 0.25): only if descending
+    - Bonus for leg contact: only if descending
+    - Stability bonus: only if descending
     - Terminal landing bonus: +100 for successful landing with both legs
 
     Args:
         state: Current state observation
         base_reward: Original reward from environment
         terminated: Whether episode has terminated (for landing bonus)
-        step: Current step number in episode (for progressive penalty)
+        step: Current step number in episode (unused, kept for API compatibility)
 
     Returns:
         Shaped reward value
@@ -112,17 +108,11 @@ def shape_reward(
     leg1_contact = state[6]
     leg2_contact = state[7]
 
-    # Solution 2 & 4: Progressive time penalty to discourage hovering
-    # Base penalty: -0.3 per step (6x larger than before)
-    # Progressive multiplier: increases over time to create landing urgency
-    # At step 0: -0.3, at step 200: -0.6, at step 400: -0.9
-    base_penalty = 0.3
-    progressive_multiplier = 1.0 + (step / 200.0)
-    shaped_reward -= base_penalty * progressive_multiplier
+    # Time penalty to discourage hovering (-0.05 per step)
+    shaped_reward -= 0.05
 
-    # Solution 3: Stricter descent requirement (y_vel < -0.2 instead of -0.05)
-    # Agent must be actively descending, not just oscillating slightly
-    is_descending = y_vel < -0.2
+    # All per-step bonuses ONLY apply if descending (prevents hover exploitation)
+    is_descending = y_vel < -0.05
 
     if is_descending:
         # Reward for being close to ground
