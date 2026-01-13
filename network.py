@@ -228,10 +228,10 @@ def soft_update(
         target: Target network to update
         tau: Interpolation parameter (0 < tau <= 1)
     """
-    for target_param, source_param in zip(target.parameters(), source.parameters()):
-        target_param.data.copy_(
-            tau * source_param.data + (1.0 - tau) * target_param.data
-        )
+    # Use no_grad and in-place operations for speed
+    with T.no_grad():
+        for target_param, source_param in zip(target.parameters(), source.parameters()):
+            target_param.data.mul_(1.0 - tau).add_(source_param.data, alpha=tau)
 
 
 def hard_update(source: nn.Module, target: nn.Module) -> None:

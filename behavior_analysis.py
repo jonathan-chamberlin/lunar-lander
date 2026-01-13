@@ -114,14 +114,15 @@ class BehaviorAnalyzer:
         if len(observations) == 0:
             return BehaviorReport("UNKNOWN", [])
 
-        # Extract state components
+        n = len(observations)
+
+        # Extract state components (single pass through observations)
         x = observations[:, 0]
         y = observations[:, 1]
         vx = observations[:, 2]
         vy = observations[:, 3]
         angle = observations[:, 4]
-        # Angular velocity is in units of 0.4 rad/s, multiply by 2.5 to convert to rad/s
-        angular_vel = observations[:, 5] * 2.5
+        angular_vel = observations[:, 5] * 2.5  # Convert to rad/s
         leg1 = observations[:, 6]
         leg2 = observations[:, 7]
 
@@ -129,26 +130,65 @@ class BehaviorAnalyzer:
         main_thrust = actions[:, 0] if len(actions) > 0 else np.array([0])
         side_thrust = actions[:, 1] if len(actions) > 0 else np.array([0])
 
+        # Pre-compute common statistics once (avoids redundant passes)
+        stats = {
+            # Means
+            'mean_vy': np.mean(vy),
+            'mean_vx': np.mean(vx),
+            'mean_angle': np.mean(angle),
+            'mean_main': np.mean(main_thrust),
+            'mean_side': np.mean(side_thrust),
+            'mean_abs_angular_vel': np.mean(np.abs(angular_vel)),
+            # Variances
+            'var_y': np.var(y),
+            'var_vy': np.var(vy),
+            'var_x': np.var(x),
+            # Min/Max
+            'min_y': np.min(y),
+            'max_y': np.max(y),
+            'max_abs_angle': np.max(np.abs(angle)),
+            'max_abs_vx': np.max(np.abs(vx)),
+            'max_abs_angular_vel': np.max(np.abs(angular_vel)),
+            # Sign changes (computed once)
+            'vy_sign_changes': np.sum(np.diff(np.sign(vy)) != 0),
+            'vx_sign_changes': np.sum(np.diff(np.sign(vx)) != 0),
+            'angle_sign_changes': np.sum(np.diff(np.sign(angle)) != 0),
+            # Finals
+            'final_x': x[-1],
+            'final_y': y[-1],
+            'final_vy': vy[-1],
+            'final_vx': vx[-1],
+            'final_angle': angle[-1],
+            'final_angular_vel': angular_vel[-1],
+            'final_leg1': leg1[-1],
+            'final_leg2': leg2[-1],
+            # Initials
+            'initial_x': x[0],
+            'initial_y': y[0],
+            # Counts
+            'n': n,
+        }
+
         # Detect outcome first
         outcome = self._detect_outcome(
             x, y, vx, vy, angle, angular_vel, leg1, leg2,
-            terminated, truncated
+            terminated, truncated, stats
         )
 
         # Collect all behaviors
         behaviors: List[str] = []
 
-        behaviors.extend(self._detect_vertical_patterns(y, vy, main_thrust))
-        behaviors.extend(self._detect_horizontal_patterns(x, vx))
-        behaviors.extend(self._detect_orientation_patterns(angle, angular_vel))
-        behaviors.extend(self._detect_thruster_patterns(main_thrust, side_thrust))
+        behaviors.extend(self._detect_vertical_patterns(y, vy, main_thrust, stats))
+        behaviors.extend(self._detect_horizontal_patterns(x, vx, stats))
+        behaviors.extend(self._detect_orientation_patterns(angle, angular_vel, stats))
+        behaviors.extend(self._detect_thruster_patterns(main_thrust, side_thrust, stats))
         behaviors.extend(self._detect_contact_events(leg1, leg2))
-        behaviors.extend(self._detect_efficiency(len(observations)))
-        behaviors.extend(self._detect_trajectory_patterns(x, y, vy, angle, angular_vel, main_thrust))
-        behaviors.extend(self._detect_altitude_milestones(y))
-        behaviors.extend(self._detect_critical_moments(angle, angular_vel, outcome))
+        behaviors.extend(self._detect_efficiency(n))
+        behaviors.extend(self._detect_trajectory_patterns(x, y, vy, angle, angular_vel, main_thrust, stats))
+        behaviors.extend(self._detect_altitude_milestones(y, stats))
+        behaviors.extend(self._detect_critical_moments(angle, angular_vel, outcome, stats))
 
-        # Detect hovering over goal until timeout
+        # Detect hovering over goal until timeout (use pre-computed stats where possible)
         if truncated:
             low_altitude_pct = np.mean(y < Thresholds.LOW_ALTITUDE)
             centered_pct = np.mean(np.abs(x) < Thresholds.CENTERED)
@@ -169,17 +209,18 @@ class BehaviorAnalyzer:
         leg1: np.ndarray,
         leg2: np.ndarray,
         terminated: bool,
-        truncated: bool
+        truncated: bool,
+        stats: dict
     ) -> str:
         """Determine the primary episode outcome."""
-        final_x = x[-1]
-        final_y = y[-1]
-        final_vy = vy[-1]
-        final_vx = vx[-1]
-        final_angle = angle[-1]
-        final_angular_vel = angular_vel[-1]
-        final_leg1 = leg1[-1]
-        final_leg2 = leg2[-1]
+        final_x = stats['final_x']
+        final_y = stats['final_y']
+        final_vy = stats['final_vy']
+        final_vx = stats['final_vx']
+        final_angle = stats['final_angle']
+        final_angular_vel = stats['final_angular_vel']
+        final_leg1 = stats['final_leg1']
+        final_leg2 = stats['final_leg2']
 
         final_velocity = np.sqrt(final_vx**2 + final_vy**2)
         both_legs = final_leg1 > 0.5 and final_leg2 > 0.5
@@ -243,7 +284,7 @@ class BehaviorAnalyzer:
 
         # Check for truncation outcomes
         if truncated:
-            y_variance = np.var(y[-50:]) if len(y) > 50 else np.var(y)
+            y_variance = np.var(y[-50:]) if stats['n'] > 50 else stats['var_y']
             if y_variance < Thresholds.LOW_VARIANCE and abs(final_vy) < Thresholds.HOVER_VELOCITY:
                 return "TIMED_OUT_HOVERING"
             if final_vy > Thresholds.HOVER_VELOCITY:
@@ -256,13 +297,14 @@ class BehaviorAnalyzer:
         self,
         y: np.ndarray,
         vy: np.ndarray,
-        main_thrust: np.ndarray
+        main_thrust: np.ndarray,
+        stats: dict
     ) -> List[str]:
         """Detect vertical flight patterns."""
         behaviors = []
-        mean_vy = np.mean(vy)
-        vy_variance = np.var(vy)
-        y_variance = np.var(y)
+        mean_vy = stats['mean_vy']
+        vy_variance = stats['var_vy']
+        y_variance = stats['var_y']
 
         # Descent patterns
         if -0.5 < mean_vy < -0.1 and vy_variance < Thresholds.HIGH_VARIANCE:
@@ -281,8 +323,7 @@ class BehaviorAnalyzer:
             behaviors.append("ASCENDED")
 
         # Yo-yo pattern (velocity sign changes)
-        vy_sign_changes = np.sum(np.diff(np.sign(vy)) != 0)
-        if vy_sign_changes > Thresholds.SIGN_CHANGE_YO_YO:
+        if stats['vy_sign_changes'] > Thresholds.SIGN_CHANGE_YO_YO:
             behaviors.append("YO_YO_PATTERN")
 
         # Continuous burn
@@ -313,12 +354,13 @@ class BehaviorAnalyzer:
     def _detect_horizontal_patterns(
         self,
         x: np.ndarray,
-        vx: np.ndarray
+        vx: np.ndarray,
+        stats: dict
     ) -> List[str]:
         """Detect horizontal movement patterns."""
         behaviors = []
-        final_x = x[-1]
-        initial_x = x[0]
+        final_x = stats['final_x']
+        initial_x = stats['initial_x']
 
         # Stayed centered
         if np.all(np.abs(x) < Thresholds.CENTERED):
@@ -334,12 +376,11 @@ class BehaviorAnalyzer:
             behaviors.append("RETURNED_TO_CENTER")
 
         # Horizontal oscillation
-        vx_sign_changes = np.sum(np.diff(np.sign(vx)) != 0)
-        if vx_sign_changes > Thresholds.SIGN_CHANGE_OSCILLATION:
+        if stats['vx_sign_changes'] > Thresholds.SIGN_CHANGE_OSCILLATION:
             behaviors.append("HORIZONTAL_OSCILLATION")
 
         # Strong lateral velocity
-        if np.max(np.abs(vx)) > 1.0:
+        if stats['max_abs_vx'] > 1.0:
             behaviors.append("STRONG_LATERAL_VELOCITY")
 
         return behaviors
@@ -347,13 +388,14 @@ class BehaviorAnalyzer:
     def _detect_orientation_patterns(
         self,
         angle: np.ndarray,
-        angular_vel: np.ndarray
+        angular_vel: np.ndarray,
+        stats: dict
     ) -> List[str]:
         """Detect orientation and stability patterns."""
         behaviors = []
-        mean_angle = np.mean(angle)
-        final_angle = angle[-1]
-        max_angle = np.max(np.abs(angle))
+        mean_angle = stats['mean_angle']
+        final_angle = stats['final_angle']
+        max_angle = stats['max_abs_angle']
 
         # Upright throughout
         if np.all(np.abs(angle) < Thresholds.UPRIGHT):
@@ -376,7 +418,7 @@ class BehaviorAnalyzer:
             behaviors.append("FLIPPED_OVER")
 
         # Spinning
-        if np.max(np.abs(angular_vel)) > Thresholds.SPINNING:
+        if stats['max_abs_angular_vel'] > Thresholds.SPINNING:
             behaviors.append("SPINNING_UNCONTROLLED")
 
         # Recovered from tilt
@@ -384,15 +426,15 @@ class BehaviorAnalyzer:
             behaviors.append("RECOVERED_FROM_TILT")
 
         # Progressive tilt (angle magnitude increasing)
-        if len(angle) > 20:
-            early_tilt = np.mean(np.abs(angle[:int(len(angle) * 0.3)]))
-            late_tilt = np.mean(np.abs(angle[int(len(angle) * 0.7):]))
+        n = stats['n']
+        if n > 20:
+            early_tilt = np.mean(np.abs(angle[:int(n * 0.3)]))
+            late_tilt = np.mean(np.abs(angle[int(n * 0.7):]))
             if late_tilt > early_tilt + 0.2:
                 behaviors.append("PROGRESSIVE_TILT")
 
         # Wobbling
-        angle_sign_changes = np.sum(np.diff(np.sign(angle)) != 0)
-        if angle_sign_changes > Thresholds.SIGN_CHANGE_WOBBLE:
+        if stats['angle_sign_changes'] > Thresholds.SIGN_CHANGE_WOBBLE:
             behaviors.append("WOBBLING")
 
         return behaviors
@@ -400,12 +442,13 @@ class BehaviorAnalyzer:
     def _detect_thruster_patterns(
         self,
         main_thrust: np.ndarray,
-        side_thrust: np.ndarray
+        side_thrust: np.ndarray,
+        stats: dict
     ) -> List[str]:
         """Detect thruster usage patterns."""
         behaviors = []
-        mean_main = np.mean(main_thrust)
-        mean_side = np.mean(side_thrust)
+        mean_main = stats['mean_main']
+        mean_side = stats['mean_side']
         action_std = np.std(np.concatenate([main_thrust, side_thrust]))
 
         # Main thrust levels
@@ -530,13 +573,14 @@ class BehaviorAnalyzer:
         vy: np.ndarray,
         angle: np.ndarray,
         angular_vel: np.ndarray,
-        main_thrust: np.ndarray
+        main_thrust: np.ndarray,
+        stats: dict
     ) -> List[str]:
         """Detect overall trajectory patterns."""
         behaviors = []
 
-        x_variance = np.var(x)
-        descending = np.mean(vy) < -0.05
+        x_variance = stats['var_x']
+        descending = stats['mean_vy'] < -0.05
 
         # Direct approach
         if x_variance < Thresholds.LOW_VARIANCE and descending:
@@ -545,7 +589,7 @@ class BehaviorAnalyzer:
             behaviors.append("CURVED_APPROACH")
 
         # Spiral descent
-        if descending and np.mean(np.abs(angular_vel)) > 0.3:
+        if descending and stats['mean_abs_angular_vel'] > 0.3:
             behaviors.append("SPIRAL_DESCENT")
 
         # Zigzag descent
@@ -574,12 +618,12 @@ class BehaviorAnalyzer:
 
         return behaviors
 
-    def _detect_altitude_milestones(self, y: np.ndarray) -> List[str]:
+    def _detect_altitude_milestones(self, y: np.ndarray, stats: dict) -> List[str]:
         """Detect altitude-related events."""
         behaviors = []
-        initial_y = y[0]
-        min_y = np.min(y)
-        max_y = np.max(y)
+        initial_y = stats['initial_y']
+        min_y = stats['min_y']
+        max_y = stats['max_y']
 
         if min_y < Thresholds.LOW_ALTITUDE:
             behaviors.append("REACHED_LOW_ALTITUDE")
@@ -604,11 +648,12 @@ class BehaviorAnalyzer:
         self,
         angle: np.ndarray,
         angular_vel: np.ndarray,
-        outcome: str
+        outcome: str,
+        stats: dict
     ) -> List[str]:
         """Detect phase-based critical behavior patterns."""
         behaviors = []
-        n = len(angle)
+        n = stats['n']
 
         if n < 20:
             return behaviors

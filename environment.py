@@ -172,21 +172,36 @@ class EpisodeManager:
     """Manages per-environment episode state for vectorized training.
 
     Tracks rewards, actions, and shaped bonuses for each parallel environment.
+    Uses pre-allocated arrays for better performance.
 
     Args:
         num_envs: Number of parallel environments
+        max_episode_length: Maximum expected episode length (default 1000 for LunarLander)
+        state_dim: Dimension of observation space (default 8 for LunarLander)
+        action_dim: Dimension of action space (default 2 for LunarLander)
     """
 
-    def __init__(self, num_envs: int) -> None:
+    def __init__(
+        self,
+        num_envs: int,
+        max_episode_length: int = 1000,
+        state_dim: int = 8,
+        action_dim: int = 2
+    ) -> None:
         self.num_envs = num_envs
+        self.max_episode_length = max_episode_length
+        self.state_dim = state_dim
+        self.action_dim = action_dim
         self.reset_all()
 
     def reset_all(self) -> None:
         """Reset tracking for all environments."""
-        self.rewards: list[list[float]] = [[] for _ in range(self.num_envs)]
-        self.shaped_bonuses: list[float] = [0.0 for _ in range(self.num_envs)]
-        self.actions: list[list[np.ndarray]] = [[] for _ in range(self.num_envs)]
-        self.observations: list[list[np.ndarray]] = [[] for _ in range(self.num_envs)]
+        # Pre-allocate arrays for better performance
+        self.rewards = np.zeros((self.num_envs, self.max_episode_length), dtype=np.float32)
+        self.actions = np.zeros((self.num_envs, self.max_episode_length, self.action_dim), dtype=np.float32)
+        self.observations = np.zeros((self.num_envs, self.max_episode_length, self.state_dim), dtype=np.float32)
+        self.shaped_bonuses = np.zeros(self.num_envs, dtype=np.float32)
+        self.step_counts = np.zeros(self.num_envs, dtype=np.int32)
 
     def reset_env(self, env_idx: int) -> None:
         """Reset tracking for a single environment.
@@ -194,10 +209,8 @@ class EpisodeManager:
         Args:
             env_idx: Index of the environment to reset
         """
-        self.rewards[env_idx] = []
+        self.step_counts[env_idx] = 0
         self.shaped_bonuses[env_idx] = 0.0
-        self.actions[env_idx] = []
-        self.observations[env_idx] = []
 
     def add_step(
         self,
@@ -216,10 +229,13 @@ class EpisodeManager:
             action: Action taken
             observation: State observation at this step
         """
-        self.rewards[env_idx].append(reward)
-        self.shaped_bonuses[env_idx] += (shaped_reward - reward)
-        self.actions[env_idx].append(action)
-        self.observations[env_idx].append(observation)
+        step = self.step_counts[env_idx]
+        if step < self.max_episode_length:
+            self.rewards[env_idx, step] = reward
+            self.actions[env_idx, step] = action
+            self.observations[env_idx, step] = observation
+            self.shaped_bonuses[env_idx] += (shaped_reward - reward)
+            self.step_counts[env_idx] += 1
 
     def get_episode_stats(
         self,
@@ -233,10 +249,12 @@ class EpisodeManager:
         Returns:
             Tuple of (total_reward, env_reward, shaped_bonus, actions_array, observations_array)
         """
-        env_reward = float(np.sum(self.rewards[env_idx]))
-        shaped_bonus = self.shaped_bonuses[env_idx]
+        steps = self.step_counts[env_idx]
+        env_reward = float(np.sum(self.rewards[env_idx, :steps]))
+        shaped_bonus = float(self.shaped_bonuses[env_idx])
         total_reward = env_reward + shaped_bonus
-        actions_array = np.array(self.actions[env_idx])
-        observations_array = np.array(self.observations[env_idx])
+        # Return slices of pre-allocated arrays (no copy needed for read-only use)
+        actions_array = self.actions[env_idx, :steps].copy()
+        observations_array = self.observations[env_idx, :steps].copy()
 
         return total_reward, env_reward, shaped_bonus, actions_array, observations_array

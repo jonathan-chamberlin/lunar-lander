@@ -312,25 +312,89 @@ class DiagnosticsTracker:
             return None
 
         num_episodes = len(self.behavior_reports)
+        num_batches = (num_episodes + batch_size - 1) // batch_size
 
-        # Count outcomes
+        # Pre-compute sets for fast lookup
+        good_behaviors_set = set(QUALITY_BEHAVIORS['good'])
+        bad_behaviors_set = set(QUALITY_BEHAVIORS['bad'])
+        contact_behaviors_set = {'TOUCHED_DOWN_CLEAN', 'SCRAPED_LEFT_LEG', 'SCRAPED_RIGHT_LEG',
+                                 'BOUNCED', 'PROLONGED_ONE_LEG', 'MULTIPLE_TOUCHDOWNS'}
+
+        # Build outcome-to-category lookup for O(1) access
+        outcome_to_category = {}
+        for category, outcomes in OUTCOME_CATEGORIES.items():
+            for outcome in outcomes:
+                outcome_to_category[outcome] = category
+
+        # Initialize counters and accumulators
         outcome_counts: Counter = Counter()
-        for report in self.behavior_reports:
-            outcome_counts[report.outcome] += 1
-
-        # Count outcome categories
         outcome_category_counts: Dict[str, int] = {cat: 0 for cat in OUTCOME_CATEGORIES}
-        for outcome, count in outcome_counts.items():
-            for category, outcomes in OUTCOME_CATEGORIES.items():
-                if outcome in outcomes:
-                    outcome_category_counts[category] += count
-                    break
-
-        # Count all behaviors
         behavior_counts: Counter = Counter()
-        for report in self.behavior_reports:
+        good_count = 0
+        bad_count = 0
+        contact_count = 0
+        success_behaviors: Counter = Counter()
+        failure_behaviors: Counter = Counter()
+        success_count = 0
+        failure_count = 0
+
+        # Initialize batch arrays
+        batch_success_counts = [0] * num_batches
+        batch_sizes = [0] * num_batches
+        batch_outcome_counts = [{cat: 0 for cat in OUTCOME_CATEGORIES} for _ in range(num_batches)]
+        batch_low_alt_counts = [0] * num_batches
+        batch_contact_counts = [0] * num_batches
+
+        # SINGLE PASS through all data
+        for i, report in enumerate(self.behavior_reports):
+            batch_idx = i // batch_size
+            batch_sizes[batch_idx] += 1
+
+            # Count outcome
+            outcome_counts[report.outcome] += 1
+            category = outcome_to_category.get(report.outcome)
+            if category:
+                outcome_category_counts[category] += 1
+                batch_outcome_counts[batch_idx][category] += 1
+
+            # Count behaviors and check quality
+            behaviors_set = set(report.behaviors)
+            has_good = False
+            has_bad = False
+            has_contact = False
+            has_low_alt = 'REACHED_LOW_ALTITUDE' in behaviors_set
+
             for behavior in report.behaviors:
                 behavior_counts[behavior] += 1
+                if behavior in good_behaviors_set:
+                    has_good = True
+                if behavior in bad_behaviors_set:
+                    has_bad = True
+                if behavior in contact_behaviors_set:
+                    has_contact = True
+
+            if has_good:
+                good_count += 1
+            if has_bad:
+                bad_count += 1
+            if has_contact:
+                contact_count += 1
+                batch_contact_counts[batch_idx] += 1
+            if has_low_alt:
+                batch_low_alt_counts[batch_idx] += 1
+
+            # Success correlation
+            if i < len(self.episode_results):
+                is_success = self.episode_results[i].success
+                if is_success:
+                    success_count += 1
+                    batch_success_counts[batch_idx] += 1
+                    for behavior in report.behaviors:
+                        success_behaviors[behavior] += 1
+                else:
+                    failure_count += 1
+                    for behavior in report.behaviors:
+                        failure_behaviors[behavior] += 1
 
         # Top behaviors
         top_behaviors = [
@@ -338,82 +402,33 @@ class DiagnosticsTracker:
             for behavior, count in behavior_counts.most_common(15)
         ]
 
-        # Quality metrics
-        good_count = sum(
-            1 for report in self.behavior_reports
-            if any(b in QUALITY_BEHAVIORS['good'] for b in report.behaviors)
-        )
-        bad_count = sum(
-            1 for report in self.behavior_reports
-            if any(b in QUALITY_BEHAVIORS['bad'] for b in report.behaviors)
-        )
-
-        # Progress indicators
+        # Flight quality rates from behavior_counts
         low_altitude_count = behavior_counts.get('REACHED_LOW_ALTITUDE', 0)
-        contact_behaviors = ['TOUCHED_DOWN_CLEAN', 'SCRAPED_LEFT_LEG', 'SCRAPED_RIGHT_LEG',
-                            'BOUNCED', 'PROLONGED_ONE_LEG', 'MULTIPLE_TOUCHDOWNS']
-        contact_count = sum(
-            1 for report in self.behavior_reports
-            if any(b in contact_behaviors for b in report.behaviors)
-        )
         clean_touchdown_count = behavior_counts.get('TOUCHED_DOWN_CLEAN', 0)
-
-        # Flight quality rates
         stayed_upright_count = behavior_counts.get('STAYED_UPRIGHT', 0)
         stayed_centered_count = behavior_counts.get('STAYED_CENTERED', 0)
         controlled_descent_count = behavior_counts.get('CONTROLLED_DESCENT', 0)
         controlled_throughout_count = behavior_counts.get('CONTROLLED_THROUGHOUT', 0)
         never_stabilized_count = behavior_counts.get('NEVER_STABILIZED', 0)
 
-        # Batch trends
+        # Compute batch statistics from accumulated counts
         batch_success_rates: List[float] = []
         batch_outcome_distributions: List[Dict[str, float]] = []
         batch_low_altitude_rates: List[float] = []
         batch_contact_rates: List[float] = []
 
-        num_batches = (num_episodes + batch_size - 1) // batch_size
         for batch_idx in range(num_batches):
-            start = batch_idx * batch_size
-            end = min(start + batch_size, num_episodes)
-            batch_reports = self.behavior_reports[start:end]
-            batch_results = self.episode_results[start:end] if start < len(self.episode_results) else []
-            batch_len = len(batch_reports)
-
+            batch_len = batch_sizes[batch_idx]
             if batch_len == 0:
                 continue
 
-            # Success rate for batch
-            if batch_results:
-                batch_successes = sum(1 for r in batch_results if r.success)
-                batch_success_rates.append(batch_successes / len(batch_results) * 100)
-            else:
-                batch_success_rates.append(0.0)
-
-            # Outcome distribution for batch
-            batch_outcomes: Counter = Counter()
-            for report in batch_reports:
-                for category, outcomes in OUTCOME_CATEGORIES.items():
-                    if report.outcome in outcomes:
-                        batch_outcomes[category] += 1
-                        break
+            batch_success_rates.append(batch_success_counts[batch_idx] / batch_len * 100)
             batch_outcome_distributions.append({
-                cat: batch_outcomes.get(cat, 0) / batch_len * 100
+                cat: batch_outcome_counts[batch_idx][cat] / batch_len * 100
                 for cat in OUTCOME_CATEGORIES
             })
-
-            # Low altitude rate for batch
-            batch_low_alt = sum(
-                1 for r in batch_reports
-                if 'REACHED_LOW_ALTITUDE' in r.behaviors
-            )
-            batch_low_altitude_rates.append(batch_low_alt / batch_len * 100)
-
-            # Contact rate for batch
-            batch_contact = sum(
-                1 for r in batch_reports
-                if any(b in contact_behaviors for b in r.behaviors)
-            )
-            batch_contact_rates.append(batch_contact / batch_len * 100)
+            batch_low_altitude_rates.append(batch_low_alt_counts[batch_idx] / batch_len * 100)
+            batch_contact_rates.append(batch_contact_counts[batch_idx] / batch_len * 100)
 
         # Crash type distribution
         crash_outcomes = OUTCOME_CATEGORIES['crashed']
@@ -423,39 +438,21 @@ class DiagnosticsTracker:
             for crash_type in crash_outcomes:
                 crash_type_distribution[crash_type] = outcome_counts.get(crash_type, 0) / total_crashes * 100
 
-        # Success correlation - behavior rates in successful vs failed runs
-        success_behaviors: Counter = Counter()
-        failure_behaviors: Counter = Counter()
-        success_count = 0
-        failure_count = 0
-
-        for i, report in enumerate(self.behavior_reports):
-            if i < len(self.episode_results):
-                if self.episode_results[i].success:
-                    success_count += 1
-                    for behavior in report.behaviors:
-                        success_behaviors[behavior] += 1
-                else:
-                    failure_count += 1
-                    for behavior in report.behaviors:
-                        failure_behaviors[behavior] += 1
-
-        success_behavior_rates = {}
-        failure_behavior_rates = {}
+        # Success correlation rates
         key_behaviors = ['STAYED_UPRIGHT', 'STAYED_CENTERED', 'CONTROLLED_DESCENT',
                         'REACHED_LOW_ALTITUDE', 'TOUCHED_DOWN_CLEAN', 'CONTROLLED_THROUGHOUT',
                         'NEVER_STABILIZED', 'RAPID_DESCENT', 'HOVER_MAINTAINED',
                         'ERRATIC_THRUST', 'SMOOTH_THRUST', 'NO_CONTACT_MADE']
 
+        success_behavior_rates = {}
+        failure_behavior_rates = {}
         for behavior in key_behaviors:
-            if success_count > 0:
-                success_behavior_rates[behavior] = success_behaviors.get(behavior, 0) / success_count * 100
-            else:
-                success_behavior_rates[behavior] = 0.0
-            if failure_count > 0:
-                failure_behavior_rates[behavior] = failure_behaviors.get(behavior, 0) / failure_count * 100
-            else:
-                failure_behavior_rates[behavior] = 0.0
+            success_behavior_rates[behavior] = (
+                success_behaviors.get(behavior, 0) / success_count * 100 if success_count > 0 else 0.0
+            )
+            failure_behavior_rates[behavior] = (
+                failure_behaviors.get(behavior, 0) / failure_count * 100 if failure_count > 0 else 0.0
+            )
 
         return BehaviorStatistics(
             total_episodes=num_episodes,

@@ -46,16 +46,22 @@ class ReplayBuffer:
             ExperienceBatch with stacked tensors
         """
         actual_batch_size = min(batch_size, len(self.buffer))
-        samples = random.sample(self.buffer, actual_batch_size)
+        # Use numpy for faster random index generation
+        indices = np.random.choice(len(self.buffer), actual_batch_size, replace=False)
 
-        states, actions, rewards, next_states, dones = zip(*samples)
+        # Direct list comprehension is faster than zip(*samples)
+        states = T.stack([self.buffer[i].state for i in indices])
+        actions = T.stack([self.buffer[i].action for i in indices])
+        rewards = T.stack([self.buffer[i].reward for i in indices])
+        next_states = T.stack([self.buffer[i].next_state for i in indices])
+        dones = T.stack([self.buffer[i].done for i in indices])
 
         return ExperienceBatch(
-            states=T.stack(states),
-            actions=T.stack(actions),
-            rewards=T.stack(rewards),
-            next_states=T.stack(next_states),
-            dones=T.stack(dones)
+            states=states,
+            actions=actions,
+            rewards=rewards,
+            next_states=next_states,
+            dones=dones
         )
 
     def update_priorities(self, indices: np.ndarray, priorities: np.ndarray) -> None:
@@ -100,11 +106,11 @@ class SumTree:
         self.data_pointer = 0
 
     def _propagate(self, idx: int, change: float) -> None:
-        """Propagate priority change up the tree."""
-        parent = (idx - 1) // 2
-        self.tree[parent] += change
-        if parent != 0:
-            self._propagate(parent, change)
+        """Propagate priority change up the tree (iterative for speed)."""
+        while idx != 0:
+            parent = (idx - 1) // 2
+            self.tree[parent] += change
+            idx = parent
 
     def update(self, idx: int, priority: float) -> None:
         """Update priority at leaf index."""
@@ -202,31 +208,30 @@ class PrioritizedReplayBuffer:
         actual_batch_size = min(batch_size, self.size)
         indices = np.zeros(actual_batch_size, dtype=np.int32)
         priorities = np.zeros(actual_batch_size, dtype=np.float32)
-        samples = []
 
         # Segment the total priority into batch_size ranges
         segment = self.tree.total / actual_batch_size
 
-        for i in range(actual_batch_size):
-            # Sample uniformly within each segment
-            low = segment * i
-            high = segment * (i + 1)
-            value = np.random.uniform(low, high)
+        # Generate all random values at once (vectorized)
+        segment_starts = np.arange(actual_batch_size) * segment
+        random_offsets = np.random.uniform(0, segment, size=actual_batch_size)
+        values = segment_starts + random_offsets
 
+        # Get leaf indices for all values
+        for i, value in enumerate(values):
             idx = self.tree.get_leaf(value)
-            # Clamp to valid range
             idx = min(idx, self.size - 1)
             indices[i] = idx
             priorities[i] = self.tree[idx]
-            samples.append(self.data[idx])
 
-        # Compute importance sampling weights
-        # w_i = (N * P(i))^(-beta) / max(w)
+        # Compute importance sampling weights (vectorized)
         probabilities = priorities / (self.tree.total + 1e-8)
         weights = (self.size * probabilities) ** (-self.beta)
-        weights = weights / (weights.max() + 1e-8)  # Normalize
-        weights = T.tensor(weights, dtype=T.float32)
+        weights = weights / (weights.max() + 1e-8)
+        weights = T.from_numpy(weights).float()
 
+        # Gather samples and stack tensors
+        samples = [self.data[idx] for idx in indices]
         states, actions, rewards, next_states, dones = zip(*samples)
 
         return ExperienceBatch(
@@ -246,10 +251,12 @@ class PrioritizedReplayBuffer:
             indices: Indices of experiences to update
             priorities: New priority values (typically |TD-error| + epsilon)
         """
+        # Vectorized clip operation
+        priorities = np.clip(priorities, self.epsilon, 100.0)
+        self.max_priority = max(self.max_priority, float(np.max(priorities)))
+
+        # Update tree for each index (tree structure requires sequential updates)
         for idx, priority in zip(indices, priorities):
-            # Clamp priority to prevent extreme values
-            priority = np.clip(priority, self.epsilon, 100.0)
-            self.max_priority = max(self.max_priority, priority)
             self.tree.update(int(idx), priority ** self.alpha)
 
     def anneal_beta(self, progress: float) -> None:

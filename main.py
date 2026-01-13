@@ -202,13 +202,13 @@ def run_rendered_episode(
             action[0] = T.clamp(action[0], -1.0, 1.0)
             action[1] = T.clamp(action[1], -1.0, 1.0)
 
-        actions.append(action.detach().cpu().numpy())
+        # Convert action once for both recording and stepping
+        action_np = action.detach().cpu().numpy()
+        actions.append(action_np)
         observations_list.append(obs.copy())
 
         # Step environment
-        next_obs, reward, terminated, truncated, info = render_env.step(
-            action.detach().numpy()
-        )
+        next_obs, reward, terminated, truncated, info = render_env.step(action_np)
         next_state = T.from_numpy(next_obs).float()
 
         # Render frame with overlay (no flicker since we control all rendering)
@@ -439,33 +439,37 @@ def main() -> None:
                         actions[:, 0] = T.clamp(actions[:, 0], -1.0, 1.0)
                         actions[:, 1] = T.clamp(actions[:, 1], -1.0, 1.0)
 
-                # Step all environments
-                next_observations, rewards, terminateds, truncateds, infos = env_bundle.vec_env.step(
-                    actions.detach().numpy()
-                )
+                # Step all environments - batch convert actions once
+                actions_np = actions.detach().cpu().numpy()
+                next_observations, rewards, terminateds, truncateds, infos = env_bundle.vec_env.step(actions_np)
                 next_states = T.from_numpy(next_observations).float()
+
+                # Detach states once for all environments (avoids per-env detach)
+                states_detached = states.detach()
+                actions_detached = actions.detach()
+                next_states_detached = next_states.detach()
 
                 # Process each environment
                 for i in range(config.run.num_envs):
                     # Compute shaped reward (pass step count for progressive penalty)
-                    current_step = len(episode_manager.rewards[i])
+                    current_step = episode_manager.step_counts[i]
                     shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i], step=current_step)
 
-                    # Record step
+                    # Record step (use pre-converted numpy array)
                     episode_manager.add_step(
                         i,
                         float(rewards[i]),
                         shaped_reward,
-                        actions[i].detach().cpu().numpy(),
+                        actions_np[i],
                         observations[i].copy()
                     )
 
-                    # Store experience
+                    # Store experience (use pre-detached tensors)
                     experience = Experience(
-                        state=states[i].detach().clone(),
-                        action=actions[i].detach().clone(),
+                        state=states_detached[i].clone(),
+                        action=actions_detached[i].clone(),
                         reward=T.tensor(shaped_reward, dtype=T.float32),
-                        next_state=next_states[i].detach().clone(),
+                        next_state=next_states_detached[i].clone(),
                         done=T.tensor(terminateds[i])
                     )
                     replay_buffer.push(experience)
@@ -480,7 +484,7 @@ def main() -> None:
                             total_reward=total_reward,
                             env_reward=env_reward,
                             shaped_bonus=shaped_bonus,
-                            steps=len(episode_manager.rewards[i]),
+                            steps=episode_manager.step_counts[i],
                             actions_array=actions_array,
                             observations_array=observations_array,
                             terminated=terminateds[i],
