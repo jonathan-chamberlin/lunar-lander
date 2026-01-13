@@ -15,7 +15,7 @@ from data_types import (
     TrainingMetrics,
     AggregatedTrainingMetrics
 )
-from behavior_analysis import BehaviorReport
+from analysis.behavior_analysis import BehaviorReport
 
 logger = logging.getLogger(__name__)
 

@@ -9,8 +9,8 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ExponentialLR
 
 from config import TrainingConfig, EnvironmentConfig, RunConfig
-from network import ActorNetwork, CriticNetwork, soft_update, hard_update
-from replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
+from training.network import ActorNetwork, CriticNetwork, soft_update, hard_update
+from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from data_types import ExperienceBatch, TrainingMetrics, AggregatedTrainingMetrics
 
 logger = logging.getLogger(__name__)

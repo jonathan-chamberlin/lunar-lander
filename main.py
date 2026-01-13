@@ -2,11 +2,8 @@
 
 This module orchestrates the training loop using components from:
 - config.py: Configuration dataclasses
-- network.py: Neural network architectures
-- trainer.py: TD3 training logic
-- replay_buffer.py: Experience replay
-- diagnostics.py: Metrics tracking and reporting
-- environment.py: Gymnasium environment management
+- training/: Neural networks, trainer, replay buffer, environment
+- analysis/: Diagnostics, behavior analysis, charts
 """
 
 
@@ -23,19 +20,19 @@ import pygame as pg
 import torch as T
 
 from config import Config, TrainingConfig, NoiseConfig, RunConfig, EnvironmentConfig, DisplayConfig
-from diagnostics import DiagnosticsTracker, DiagnosticsReporter
-from environment import (
+from data_types import Experience, EpisodeResult, ActionStatistics
+from training.environment import (
     create_environments,
     shape_reward,
     compute_noise_scale,
     EpisodeManager
 )
-from network import OUActionNoise
-from replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
-from trainer import TD3Trainer
-from data_types import Experience, EpisodeResult, ActionStatistics
-from behavior_analysis import BehaviorAnalyzer
-from charts import ChartGenerator
+from training.network import OUActionNoise
+from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
+from training.trainer import TD3Trainer
+from analysis.diagnostics import DiagnosticsTracker, DiagnosticsReporter
+from analysis.behavior_analysis import BehaviorAnalyzer
+from analysis.charts import ChartGenerator
 
 # Configure logging
 logging.basicConfig(
@@ -596,6 +593,16 @@ def main() -> None:
                 except Exception:
                     print("Could not print even minimal diagnostics")
 
+            # Print elapsed time and speed metrics before charts
+            if start_time is not None:
+                elapsed_time = time.time() - start_time
+                print(f"\nTotal simulation time: {elapsed_time:.2f} seconds")
+                if elapsed_time > 0 and total_steps > 0:
+                    final_sps = total_steps / elapsed_time
+                    final_ups = trainer.training_steps / elapsed_time
+                    print(f"Average speed: {final_sps:.0f} steps/sec | {final_ups:.0f} updates/sec")
+                    print(f"Total steps: {total_steps:,} | Total updates: {trainer.training_steps:,}")
+
             # Generate training visualization charts
             try:
                 chart_generator = ChartGenerator(diagnostics, batch_size=50)
@@ -604,16 +611,6 @@ def main() -> None:
                 logger.error(f"Failed to generate charts: {e}")
         else:
             print("\nNo episodes completed - no diagnostics to show")
-
-        # Print elapsed time and speed metrics if timing is enabled
-        if start_time is not None:
-            elapsed_time = time.time() - start_time
-            print(f"\nTotal simulation time: {elapsed_time:.2f} seconds")
-            if elapsed_time > 0 and total_steps > 0:
-                final_sps = total_steps / elapsed_time
-                final_ups = trainer.training_steps / elapsed_time
-                print(f"Average speed: {final_sps:.0f} steps/sec | {final_ups:.0f} updates/sec")
-                print(f"Total steps: {total_steps:,} | Total updates: {trainer.training_steps:,}")
 
         # Cleanup pygame
         try:

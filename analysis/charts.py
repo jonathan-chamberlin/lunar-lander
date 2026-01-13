@@ -10,7 +10,7 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 
-from diagnostics import DiagnosticsTracker
+from analysis.diagnostics import DiagnosticsTracker
 
 logger = logging.getLogger(__name__)
 
