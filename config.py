@@ -9,7 +9,7 @@ class RunConfig:
     num_episodes: int = 5000
     num_envs: int = 8
     random_warmup_episodes: int = 5  # Reduced from 15 (good init bias helps)
-    framerate: int = 60  # Reduced from 600 (realistic display rate)
+    framerate: int = 600
     timing: bool = True
     training_enabled: bool = True  # Set False to skip all network training (for testing)
 
