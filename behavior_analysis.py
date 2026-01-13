@@ -148,6 +148,14 @@ class BehaviorAnalyzer:
         behaviors.extend(self._detect_altitude_milestones(y))
         behaviors.extend(self._detect_critical_moments(angle, angular_vel, outcome))
 
+        # Detect hovering over goal until timeout
+        if truncated:
+            low_altitude_pct = np.mean(y < Thresholds.LOW_ALTITUDE)
+            centered_pct = np.mean(np.abs(x) < Thresholds.CENTERED)
+            low_velocity = np.mean(np.abs(vy)) < Thresholds.HOVER_VELOCITY
+            if low_altitude_pct > 0.5 and centered_pct > 0.5 and low_velocity:
+                behaviors.append("HOVERED_OVER_GOAL_TIMEOUT")
+
         return BehaviorReport(outcome, behaviors)
 
     def _detect_outcome(
