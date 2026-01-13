@@ -217,7 +217,6 @@ def finalize_episode(
 
     return result
 
-
 def run_rendered_episode(
     render_env,
     trainer: TD3Trainer,
