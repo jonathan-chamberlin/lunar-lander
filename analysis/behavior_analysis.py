@@ -30,7 +30,7 @@ class Thresholds:
     FLIPPED = 1.57  # pi/2
 
     # Angular velocity thresholds (rad/s)
-    SPINNING = 1.5
+    SPINNING = 2
 
     # Position thresholds
     OFF_SCREEN_Y = 1.5
