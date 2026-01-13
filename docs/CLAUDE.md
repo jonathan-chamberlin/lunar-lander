@@ -22,8 +22,7 @@ lunar-lander/
 │   ├── network.py         # Actor/Critic neural networks, OUActionNoise
 │   ├── trainer.py         # TD3Trainer class
 │   ├── replay_buffer.py   # ReplayBuffer and PrioritizedReplayBuffer
-│   ├── environment.py     # Gym wrappers, reward shaping, EpisodeManager
-│   └── inputs.py          # Legacy config variables
+│   └── environment.py     # Gym wrappers, reward shaping, EpisodeManager
 │
 ├── analysis/              # Analysis and visualization
 │   ├── behavior_analysis.py  # BehaviorAnalyzer - detects flight patterns
