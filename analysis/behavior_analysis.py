@@ -260,7 +260,7 @@ class BehaviorAnalyzer:
             if off_top:
                 return "FLEW_OFF_TOP"
 
-        # Check for successful landings
+        # Check for successful landings (both legs on ground)
         if both_legs:
             if (final_velocity < Thresholds.SOFT_LANDING_VELOCITY and
                     abs(final_angle) < Thresholds.UPRIGHT and
@@ -273,10 +273,25 @@ class BehaviorAnalyzer:
                 return "LANDED_TILTED"
             if final_velocity < Thresholds.CRASH_VELOCITY:
                 return "LANDED_HARD"
+            # High horizontal velocity with both legs down = sliding
+            if abs(final_vx) > 0.1:
+                return "LANDED_SLIDING"
 
         # Check for single leg landing
         if one_leg and terminated:
             return "LANDED_ONE_LEG"
+
+        # Check for truncation outcomes (timeout)
+        if truncated:
+            # Timed out with both legs on ground = successful landing that ran out of time
+            if both_legs:
+                return "TIMED_OUT_ON_GROUND"
+            y_variance = np.var(y[-50:]) if stats['n'] > 50 else stats['var_y']
+            if y_variance < Thresholds.LOW_VARIANCE and abs(final_vy) < Thresholds.HOVER_VELOCITY:
+                return "TIMED_OUT_HOVERING"
+            if final_vy > Thresholds.HOVER_VELOCITY:
+                return "TIMED_OUT_ASCENDING"
+            return "TIMED_OUT_DESCENDING"
 
         # Check for crashes (terminated without good landing)
         if terminated:
@@ -286,16 +301,11 @@ class BehaviorAnalyzer:
                 return "CRASHED_SIDEWAYS"
             if abs(final_angle) > Thresholds.TILTED:
                 return "CRASHED_FAST_TILTED"
-            return "CRASHED_FAST_VERTICAL"
-
-        # Check for truncation outcomes
-        if truncated:
-            y_variance = np.var(y[-50:]) if stats['n'] > 50 else stats['var_y']
-            if y_variance < Thresholds.LOW_VARIANCE and abs(final_vy) < Thresholds.HOVER_VELOCITY:
-                return "TIMED_OUT_HOVERING"
-            if final_vy > Thresholds.HOVER_VELOCITY:
-                return "TIMED_OUT_ASCENDING"
-            return "TIMED_OUT_DESCENDING"
+            # Fast vertical crash: roughly upright but high downward velocity
+            if abs(final_angle) <= Thresholds.TILTED and abs(final_vy) > Thresholds.HARD_LANDING_VELOCITY:
+                return "CRASHED_FAST_VERTICAL"
+            # Catch-all for other crash scenarios
+            return "CRASHED_OTHER"
 
         return "UNKNOWN"
 

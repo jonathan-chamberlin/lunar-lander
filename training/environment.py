@@ -1,6 +1,7 @@
 """Environment management and reward shaping for Lunar Lander."""
 
 import logging
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Generator, Tuple, Set, Optional
@@ -55,7 +56,8 @@ def create_environments(
     # Create single environment for rendered episodes
     # Use rgb_array mode so we control rendering and can add overlays without flicker
     render_env = gym.make(env_config.env_name, render_mode="rgb_array")
-    render_env.metadata["render_fps"] = run_config.framerate
+    if run_config.framerate is not None:
+        render_env.metadata["render_fps"] = run_config.framerate
 
     logger.info(f"Created async vectorized env with {run_config.num_envs} parallel processes")
 
@@ -202,6 +204,8 @@ class EpisodeManager:
         self.observations = np.zeros((self.num_envs, self.max_episode_length, self.state_dim), dtype=np.float32)
         self.shaped_bonuses = np.zeros(self.num_envs, dtype=np.float32)
         self.step_counts = np.zeros(self.num_envs, dtype=np.int32)
+        # Track episode start times for duration calculation
+        self.start_times = np.full(self.num_envs, time.time(), dtype=np.float64)
 
     def reset_env(self, env_idx: int) -> None:
         """Reset tracking for a single environment.
@@ -211,6 +215,7 @@ class EpisodeManager:
         """
         self.step_counts[env_idx] = 0
         self.shaped_bonuses[env_idx] = 0.0
+        self.start_times[env_idx] = time.time()
 
     def add_step(
         self,
@@ -240,21 +245,22 @@ class EpisodeManager:
     def get_episode_stats(
         self,
         env_idx: int
-    ) -> Tuple[float, float, float, np.ndarray, np.ndarray]:
+    ) -> Tuple[float, float, float, np.ndarray, np.ndarray, float]:
         """Get episode statistics for a completed environment.
 
         Args:
             env_idx: Index of the environment
 
         Returns:
-            Tuple of (total_reward, env_reward, shaped_bonus, actions_array, observations_array)
+            Tuple of (total_reward, env_reward, shaped_bonus, actions_array, observations_array, duration_seconds)
         """
         steps = self.step_counts[env_idx]
         env_reward = float(np.sum(self.rewards[env_idx, :steps]))
         shaped_bonus = float(self.shaped_bonuses[env_idx])
         total_reward = env_reward + shaped_bonus
+        duration_seconds = time.time() - self.start_times[env_idx]
         # Return slices of pre-allocated arrays (no copy needed for read-only use)
         actions_array = self.actions[env_idx, :steps].copy()
         observations_array = self.observations[env_idx, :steps].copy()
 
-        return total_reward, env_reward, shaped_bonus, actions_array, observations_array
+        return total_reward, env_reward, shaped_bonus, actions_array, observations_array, duration_seconds

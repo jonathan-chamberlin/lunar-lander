@@ -15,6 +15,7 @@ import traceback
 import warnings
 from typing import Optional, Union
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pygame as pg
 import torch as T
@@ -87,7 +88,8 @@ BEHAVIOR_CATEGORIES = {
 
 # Outcomes that indicate a safe landing
 SAFE_LANDING_OUTCOMES = {
-    'LANDED_PERFECTLY', 'LANDED_SOFTLY', 'LANDED_TILTED', 'LANDED_HARD', 'LANDED_ONE_LEG'
+    'LANDED_PERFECTLY', 'LANDED_SOFTLY', 'LANDED_TILTED', 'LANDED_HARD', 'LANDED_ONE_LEG',
+    'LANDED_SLIDING', 'TIMED_OUT_ON_GROUND'
 }
 
 # Short names for behaviors (for compact display)
@@ -158,6 +160,7 @@ def finalize_episode(
     env_reward: float,
     shaped_bonus: float,
     steps: int,
+    duration_seconds: float,
     actions_array: np.ndarray,
     observations_array: np.ndarray,
     terminated: bool,
@@ -172,14 +175,15 @@ def finalize_episode(
     total_training_updates: int = 0
 ) -> EpisodeResult:
     """Create episode result, record it, print status, and track action stats."""
-    success = total_reward >= success_threshold
+    success = env_reward >= success_threshold
     result = EpisodeResult(
         episode_num=episode_num,
         total_reward=total_reward,
         env_reward=env_reward,
         shaped_bonus=shaped_bonus,
         steps=steps,
-        success=success
+        success=success,
+        duration_seconds=duration_seconds
     )
 
     diagnostics.record_episode(result)
@@ -251,6 +255,7 @@ def run_rendered_episode(
     """
     obs, _ = render_env.reset()
     state = T.from_numpy(obs).float()
+    episode_start_time = time.time()
 
     noise_scale = compute_noise_scale(
         episode_num,
@@ -321,7 +326,8 @@ def run_rendered_episode(
 
         # Update display and control frame rate
         pg.display.flip()
-        clock.tick(config.run.framerate)
+        if config.run.framerate is not None:
+            clock.tick(config.run.framerate)
 
         # Apply reward shaping (pass step count for progressive penalty)
         current_step = len(rewards)  # 0-indexed step count
@@ -355,6 +361,7 @@ def run_rendered_episode(
     # Compute and finalize episode
     env_reward = float(np.sum(rewards))
     total_reward = env_reward + shaped_bonus
+    duration_seconds = time.time() - episode_start_time
 
     # Update total steps for this episode
     updated_total_steps = total_steps + episode_steps
@@ -365,6 +372,7 @@ def run_rendered_episode(
         env_reward=env_reward,
         shaped_bonus=shaped_bonus,
         steps=episode_steps,
+        duration_seconds=duration_seconds,
         actions_array=np.array(actions),
         observations_array=np.array(observations_list),
         terminated=episode_terminated,
@@ -436,6 +444,7 @@ def main() -> None:
     training_started = False
     user_quit = False
     error_occurred = None
+    current_chart_fig = None  # Track current chart figure for periodic updates
 
     # Maintenance interval (every N episodes, perform cleanup)
     MAINTENANCE_INTERVAL = 100
@@ -516,6 +525,14 @@ def main() -> None:
                             reporter.log_training_update(metrics, noise_scale)
 
                     completed_episodes += 1
+
+                    # Periodic chart generation every 100 episodes
+                    if completed_episodes % 100 == 0:
+                        if current_chart_fig is not None:
+                            plt.close(current_chart_fig)
+                        chart_gen = ChartGenerator(diagnostics, batch_size=50)
+                        current_chart_fig = chart_gen.generate_all(show=True, block=False)
+
                     continue
 
                 # Calculate noise scale
@@ -573,7 +590,7 @@ def main() -> None:
 
                     # Check if episode completed
                     if terminateds[i] or truncateds[i]:
-                        total_reward, env_reward, shaped_bonus, actions_array, observations_array = \
+                        total_reward, env_reward, shaped_bonus, actions_array, observations_array, duration_seconds = \
                             episode_manager.get_episode_stats(i)
 
                         finalize_episode(
@@ -582,6 +599,7 @@ def main() -> None:
                             env_reward=env_reward,
                             shaped_bonus=shaped_bonus,
                             steps=episode_manager.step_counts[i],
+                            duration_seconds=duration_seconds,
                             actions_array=actions_array,
                             observations_array=observations_array,
                             terminated=terminateds[i],
@@ -598,6 +616,13 @@ def main() -> None:
                         episode_manager.reset_env(i)
                         noise.reset(i)
                         completed_episodes += 1
+
+                        # Periodic chart generation every 100 episodes
+                        if completed_episodes % 100 == 0:
+                            if current_chart_fig is not None:
+                                plt.close(current_chart_fig)
+                            chart_gen = ChartGenerator(diagnostics, batch_size=50)
+                            current_chart_fig = chart_gen.generate_all(show=True, block=False)
 
                         if completed_episodes >= config.run.num_episodes:
                             break
@@ -703,10 +728,14 @@ def main() -> None:
                     print(f"Average speed: {final_sps:.0f} steps/sec | {final_ups:.0f} updates/sec")
                     print(f"Total steps: {total_steps:,} | Total updates: {trainer.training_steps:,}")
 
-            # Generate training visualization charts
+            # Generate final training visualization charts
             try:
+                # Close any existing periodic chart first
+                if current_chart_fig is not None:
+                    plt.close(current_chart_fig)
+                # Generate final chart (blocking)
                 chart_generator = ChartGenerator(diagnostics, batch_size=50)
-                chart_generator.generate_all(show=True)
+                chart_generator.generate_all(show=True, block=True)
             except Exception as e:
                 logger.error(f"Failed to generate charts: {e}")
         else:

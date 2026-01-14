@@ -90,6 +90,20 @@ Key configuration options in `config.py`:
 - **BehaviorAnalyzer**: Detects 50+ flight behaviors for diagnostics
 - **EpisodeManager**: Pre-allocated arrays for efficient step tracking
 
+### Success Criteria
+
+An episode is considered **successful** when:
+```
+env_reward >= 200
+```
+
+Important distinction:
+- **env_reward**: Raw reward from Gymnasium (used for success determination)
+- **shaped_bonus**: Additional reward shaping (used for training only)
+- **total_reward**: env_reward + shaped_bonus (what the agent learns from)
+
+The shaped bonus helps guide learning but does not count toward success. This ensures the agent must achieve genuine environment performance (200+ from Gymnasium) rather than exploiting reward shaping bonuses.
+
 ### Reward Shaping (training/environment.py)
 
 Custom shaping on top of Gymnasium rewards:

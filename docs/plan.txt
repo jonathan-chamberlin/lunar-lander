@@ -58,10 +58,12 @@ LEFT OFF: Copy and paste that huge print statement into claude. "Here are diagno
 
 (DONE) Fix this message that appeared after run 2397: "pygame.error: Out of memory"
 
-Make is so the simulation prints each episode in this format: <>Run 30 ✗ CRASHED_SPINNING  Reward: -1194.5
+(DONE) Make is so the simulation prints each episode in this format: <>Run 30 ✗ CRASHED_SPINNING  Reward: -1194.5
     ↔ DRIFTED_LEFT, STRONG_LATERAL_VELOCITY
     ↻ HEAVY_RIGHT_TILT, FLIPPED_OVER, SPINNING
     🔥 MAIN_HEAVY, ERRATIC, FULL_THROTTLE</>
+
+End simulation, then run it again for 200 runs. Ensure that the chart genrates after run 100, then that at run 200 another generates, then close that chart out and ensure a third generates.
 
 Keep running my simulation to ensure it actually hits the benchmark of 200 reward for 100 episodes in a row
 

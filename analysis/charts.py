@@ -49,10 +49,13 @@ OUTCOME_TO_CATEGORY = {
     'LANDED_HARD': 'landed',
     'LANDED_TILTED': 'landed',
     'LANDED_ONE_LEG': 'landed',
+    'LANDED_SLIDING': 'landed',
+    'TIMED_OUT_ON_GROUND': 'landed',
     'CRASHED_FAST_VERTICAL': 'crashed',
     'CRASHED_FAST_TILTED': 'crashed',
     'CRASHED_SIDEWAYS': 'crashed',
     'CRASHED_SPINNING': 'crashed',
+    'CRASHED_OTHER': 'crashed',
     'TIMED_OUT_HOVERING': 'timed_out',
     'TIMED_OUT_DESCENDING': 'timed_out',
     'TIMED_OUT_ASCENDING': 'timed_out',
@@ -83,7 +86,12 @@ class ChartGenerator:
     # Main Public Method
     # =========================================================================
 
-    def generate_all(self, show: bool = True, save_path: Optional[str] = None) -> None:
+    def generate_all(
+        self,
+        show: bool = True,
+        save_path: Optional[str] = None,
+        block: bool = True
+    ) -> Optional[plt.Figure]:
         """Generate all charts in a single figure with subplots.
 
         Creates a 2x3 grid of subplots containing all training visualizations.
@@ -91,18 +99,22 @@ class ChartGenerator:
         Args:
             show: Whether to display the figure with plt.show()
             save_path: Optional path to save the figure as an image
+            block: Whether plt.show() blocks execution (False for periodic updates)
+
+        Returns:
+            The matplotlib Figure object, or None if not enough data
         """
         # Check if we have enough data
         num_episodes = len(self.tracker.episode_results)
         if num_episodes < 10:
             logger.warning(f"Not enough episodes ({num_episodes}) to generate meaningful charts")
-            return
+            return None
 
-        # Create figure with 2x3 subplot grid
-        # Size fits XP laptop screens (1024x768), with constrained_layout for tight spacing
+        # Create figure with 2x4 subplot grid
+        # Wider to accommodate 4 columns
         fig, axes = plt.subplots(
-            2, 3,
-            figsize=(9.5, 6.5),
+            2, 4,
+            figsize=(12.5, 6.5),
             constrained_layout=True
         )
         fig.suptitle(f'Training Progress - {num_episodes} Episodes', fontsize=12, fontweight='bold')
@@ -127,6 +139,12 @@ class ChartGenerator:
             axes[0, 2].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[0, 2].transAxes)
 
         try:
+            self._plot_episode_duration(axes[0, 3])
+        except Exception as e:
+            logger.warning(f"Failed to plot duration chart: {e}")
+            axes[0, 3].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[0, 3].transAxes)
+
+        try:
             self._plot_consecutive_streak(axes[1, 0])
         except Exception as e:
             logger.warning(f"Failed to plot streak chart: {e}")
@@ -143,6 +161,9 @@ class ChartGenerator:
         except Exception as e:
             logger.warning(f"Failed to plot report card: {e}")
             axes[1, 2].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[1, 2].transAxes)
+
+        # Leave axes[1, 3] empty or use for future chart
+        axes[1, 3].axis('off')
 
         # Set minimum window size to prevent label overlap (in pixels)
         # 950x650 is slightly larger than where labels would collide
@@ -163,47 +184,86 @@ class ChartGenerator:
 
         # Show if requested
         if show:
-            plt.show()
+            plt.show(block=block)
         else:
             plt.close(fig)
+            return None
+
+        return fig
 
     # =========================================================================
     # Individual Chart Methods
     # =========================================================================
 
     def _plot_reward_over_time(self, ax: plt.Axes) -> None:
-        """Chart 1: Episode reward with rolling average.
+        """Chart 1: Episode reward as stacked bars (env + shaped).
 
-        Shows raw episode rewards (transparent) with a bold rolling average line.
-        Includes reference lines at y=0 and success threshold.
+        Shows env_reward (bottom) and shaped_bonus (top) as stacked bars.
+        The total height shows total_reward. Includes success threshold line.
 
         Args:
             ax: Matplotlib axes to plot on
         """
-        rewards = [r.total_reward for r in self.tracker.episode_results]
+        results = self.tracker.episode_results
 
-        if not rewards:
+        if not results:
             ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Episode Reward Over Time')
             return
 
-        episodes = list(range(len(rewards)))
-        rolling_avg = self._compute_rolling_average(rewards, window=50)
+        episodes = np.arange(len(results))
+        env_rewards = np.array([r.env_reward for r in results])
+        shaped_bonuses = np.array([r.shaped_bonus for r in results])
 
-        # Plot raw rewards (transparent scatter)
-        ax.scatter(episodes, rewards, alpha=0.2, s=5, color='blue', label='Raw Reward')
+        # Stacked bars: env_reward on bottom, shaped_bonus on top
+        # Use width=1 for edge-to-edge bars (appears continuous at scale)
+        ax.bar(episodes, env_rewards, width=1.0, color='#3498db', alpha=0.8, label='Env Reward')
+        ax.bar(episodes, shaped_bonuses, width=1.0, bottom=env_rewards, color='#e74c3c', alpha=0.8, label='Shaped Bonus')
 
-        # Plot rolling average (bold line)
-        ax.plot(episodes, rolling_avg, color='blue', linewidth=2, label='50-Episode Average')
+        # Rolling average line for total reward
+        total_rewards = env_rewards + shaped_bonuses
+        rolling_avg = self._compute_rolling_average(total_rewards.tolist(), window=50)
+        ax.plot(episodes, rolling_avg, color='yellow', linewidth=1.5, label='50-Ep Avg (Total)')
 
         # Reference lines
         ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
-        ax.axhline(y=180, color='green', linestyle='--', alpha=0.7, label='Success Threshold (180)')
+        ax.axhline(y=200, color='green', linestyle='--', linewidth=2, alpha=0.9, label='Env Reward Success (200)')
 
         ax.set_xlabel('Episode')
-        ax.set_ylabel('Total Reward')
-        ax.set_title('Episode Reward Over Time')
-        ax.legend(loc='lower right', fontsize=8)
+        ax.set_ylabel('Reward')
+        ax.set_title('Episode Reward Over Time (Stacked)')
+        ax.legend(loc='lower right', fontsize=7)
+
+    def _plot_episode_duration(self, ax: plt.Axes) -> None:
+        """Chart: Episode duration over time.
+
+        Shows episode duration (seconds) with rolling average.
+
+        Args:
+            ax: Matplotlib axes to plot on
+        """
+        results = self.tracker.episode_results
+
+        if not results:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('Episode Duration')
+            return
+
+        episodes = np.arange(len(results))
+        durations = np.array([r.duration_seconds for r in results])
+
+        # Plot raw durations as transparent scatter
+        ax.scatter(episodes, durations, alpha=0.3, s=8, color='purple', label='Duration')
+
+        # Rolling average line
+        rolling_avg = self._compute_rolling_average(durations.tolist(), window=50)
+        ax.plot(episodes, rolling_avg, color='purple', linewidth=2, label='50-Ep Average')
+
+        ax.set_xlabel('Episode')
+        ax.set_ylabel('Duration (seconds)')
+        ax.set_title('Episode Duration Over Time')
+        ax.legend(loc='upper right', fontsize=7)
+        ax.set_ylim(bottom=0)
 
     def _plot_success_rate(self, ax: plt.Axes) -> None:
         """Chart 2: Success rate over time in batches.

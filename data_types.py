@@ -100,13 +100,15 @@ class EpisodeResult:
     shaped_bonus: float
     steps: int
     success: bool
+    duration_seconds: float = 0.0
 
     def __str__(self) -> str:
         status = "SUCCESS" if self.success else "FAILURE"
         return (
             f"Episode {self.episode_num}: {status}, "
             f"Reward: {self.total_reward:.1f} "
-            f"(env: {self.env_reward:.1f}, shaped: {self.shaped_bonus:.1f})"
+            f"(env: {self.env_reward:.1f}, shaped: {self.shaped_bonus:.1f}), "
+            f"Duration: {self.duration_seconds:.2f}s"
         )
 
 

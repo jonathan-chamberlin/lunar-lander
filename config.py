@@ -1,7 +1,7 @@
 """Configuration dataclasses for the Lunar Lander TD3 training."""
 
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Optional, Tuple
 @dataclass(frozen=True)
 class RunConfig:
     """Configuration for training runs."""
@@ -9,7 +9,7 @@ class RunConfig:
     num_episodes: int = 5000
     num_envs: int = 8
     random_warmup_episodes: int = 5  # Reduced from 15 (good init bias helps)
-    framerate: int = 600
+    framerate: Optional[int] = None  # None = unlimited speed, or set FPS limit
     timing: bool = True
     training_enabled: bool = True  # Set False to skip all network training (for testing)
 
@@ -45,7 +45,7 @@ class EnvironmentConfig:
     env_name: str = "LunarLanderContinuous-v3"
     state_dim: int = 8
     action_dim: int = 2
-    success_threshold: float = 180.0
+    success_threshold: float = 200.0
 
 
 @dataclass(frozen=True)
