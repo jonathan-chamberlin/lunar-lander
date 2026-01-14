@@ -9,10 +9,12 @@ This module orchestrates the training loop using components from:
 
 import gc
 import logging
+import os
 import sys
 import time
 import traceback
 import warnings
+from datetime import datetime
 from typing import Optional, Union
 
 import matplotlib.pyplot as plt
@@ -444,7 +446,10 @@ def main() -> None:
     training_started = False
     user_quit = False
     error_occurred = None
-    current_chart_fig = None  # Track current chart figure for periodic updates
+
+    # Chart folder for this simulation run (created on first periodic chart)
+    simulation_start_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    chart_folder: Optional[str] = None
 
     # Maintenance interval (every N episodes, perform cleanup)
     MAINTENANCE_INTERVAL = 100
@@ -528,10 +533,17 @@ def main() -> None:
 
                     # Periodic chart generation every 100 episodes
                     if completed_episodes % 100 == 0:
-                        if current_chart_fig is not None:
-                            plt.close(current_chart_fig)
+                        # Create chart folder on first periodic chart
+                        if chart_folder is None:
+                            chart_folder = os.path.join("chart_images", simulation_start_timestamp)
+                            os.makedirs(chart_folder, exist_ok=True)
+                            logger.info(f"Created chart folder: {chart_folder}")
+
+                        # Generate chart to file and open with system viewer
+                        chart_path = os.path.join(chart_folder, f"chart_episode_{completed_episodes}.png")
                         chart_gen = ChartGenerator(diagnostics, batch_size=50)
-                        current_chart_fig = chart_gen.generate_all(show=True, block=False)
+                        if chart_gen.generate_to_file(chart_path):
+                            os.startfile(chart_path)
 
                     continue
 
@@ -619,10 +631,17 @@ def main() -> None:
 
                         # Periodic chart generation every 100 episodes
                         if completed_episodes % 100 == 0:
-                            if current_chart_fig is not None:
-                                plt.close(current_chart_fig)
+                            # Create chart folder on first periodic chart
+                            if chart_folder is None:
+                                chart_folder = os.path.join("chart_images", simulation_start_timestamp)
+                                os.makedirs(chart_folder, exist_ok=True)
+                                logger.info(f"Created chart folder: {chart_folder}")
+
+                            # Generate chart to file and open with system viewer
+                            chart_path = os.path.join(chart_folder, f"chart_episode_{completed_episodes}.png")
                             chart_gen = ChartGenerator(diagnostics, batch_size=50)
-                            current_chart_fig = chart_gen.generate_all(show=True, block=False)
+                            if chart_gen.generate_to_file(chart_path):
+                                os.startfile(chart_path)
 
                         if completed_episodes >= config.run.num_episodes:
                             break
@@ -730,10 +749,14 @@ def main() -> None:
 
             # Generate final training visualization charts
             try:
-                # Close any existing periodic chart first
-                if current_chart_fig is not None:
-                    plt.close(current_chart_fig)
-                # Generate final chart (blocking)
+                # Save final chart to folder if one was created
+                if chart_folder is not None:
+                    chart_path = os.path.join(chart_folder, f"chart_final_{completed_episodes}.png")
+                    chart_gen = ChartGenerator(diagnostics, batch_size=50)
+                    chart_gen.generate_to_file(chart_path)
+                    logger.info(f"Final chart saved to {chart_path}")
+
+                # Generate and show final chart (blocking) - safe since AsyncVectorEnv is closed
                 chart_generator = ChartGenerator(diagnostics, batch_size=50)
                 chart_generator.generate_all(show=True, block=True)
             except Exception as e:

@@ -83,8 +83,47 @@ class ChartGenerator:
         self.batch_size = batch_size
 
     # =========================================================================
-    # Main Public Method
+    # Main Public Methods
     # =========================================================================
+
+    def generate_to_file(self, file_path: str) -> bool:
+        """Generate charts to a file without GUI.
+
+        Uses 'Agg' backend to avoid GUI conflicts with multiprocessing.
+        This is safe to call while AsyncVectorEnv is running.
+
+        Args:
+            file_path: Path to save the chart image
+
+        Returns:
+            True if successful, False otherwise
+        """
+        import matplotlib
+        original_backend = matplotlib.get_backend()
+
+        try:
+            # Switch to non-GUI backend
+            plt.switch_backend('Agg')
+
+            # Generate the figure (don't show)
+            fig = self._create_figure()
+            if fig is None:
+                return False
+
+            # Save to file
+            fig.savefig(file_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to generate chart to file: {e}")
+            return False
+        finally:
+            # Restore original backend
+            try:
+                plt.switch_backend(original_backend)
+            except Exception:
+                pass  # Backend switch may fail if original was interactive
 
     def generate_all(
         self,
@@ -94,12 +133,48 @@ class ChartGenerator:
     ) -> Optional[plt.Figure]:
         """Generate all charts in a single figure with subplots.
 
-        Creates a 2x3 grid of subplots containing all training visualizations.
+        Creates a 2x4 grid of subplots containing all training visualizations.
 
         Args:
             show: Whether to display the figure with plt.show()
             save_path: Optional path to save the figure as an image
             block: Whether plt.show() blocks execution (False for periodic updates)
+
+        Returns:
+            The matplotlib Figure object, or None if not enough data
+        """
+        fig = self._create_figure()
+        if fig is None:
+            return None
+
+        # Set minimum window size to prevent label overlap (in pixels)
+        # 950x650 is slightly larger than where labels would collide
+        try:
+            fig_manager = plt.get_current_fig_manager()
+            if hasattr(fig_manager, 'window'):
+                fig_manager.window.minsize(950, 650)
+        except Exception:
+            pass  # Not all backends support this
+
+        # Save if path provided
+        if save_path:
+            try:
+                fig.savefig(save_path, dpi=150, bbox_inches='tight')
+                logger.info(f"Charts saved to {save_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save charts: {e}")
+
+        # Show if requested
+        if show:
+            plt.show(block=block)
+        else:
+            plt.close(fig)
+            return None
+
+        return fig
+
+    def _create_figure(self) -> Optional[plt.Figure]:
+        """Create the chart figure with all subplots.
 
         Returns:
             The matplotlib Figure object, or None if not enough data
@@ -164,30 +239,6 @@ class ChartGenerator:
 
         # Leave axes[1, 3] empty or use for future chart
         axes[1, 3].axis('off')
-
-        # Set minimum window size to prevent label overlap (in pixels)
-        # 950x650 is slightly larger than where labels would collide
-        try:
-            fig_manager = plt.get_current_fig_manager()
-            if hasattr(fig_manager, 'window'):
-                fig_manager.window.minsize(950, 650)
-        except Exception:
-            pass  # Not all backends support this
-
-        # Save if path provided
-        if save_path:
-            try:
-                fig.savefig(save_path, dpi=150, bbox_inches='tight')
-                logger.info(f"Charts saved to {save_path}")
-            except Exception as e:
-                logger.warning(f"Failed to save charts: {e}")
-
-        # Show if requested
-        if show:
-            plt.show(block=block)
-        else:
-            plt.close(fig)
-            return None
 
         return fig
 
@@ -261,7 +312,7 @@ class ChartGenerator:
 
         ax.set_xlabel('Episode')
         ax.set_ylabel('Duration (seconds)')
-        ax.set_title('Episode Duration Over Time')
+        ax.set_title('Episode Duration')
         ax.legend(loc='upper right', fontsize=7)
         ax.set_ylim(bottom=0)
 
@@ -323,7 +374,7 @@ class ChartGenerator:
         """
         if not self.tracker.behavior_reports:
             ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
-            ax.set_title('Outcome Distribution Over Time')
+            ax.set_title('Outcome Distribution')
             return
 
         outcome_data = self._get_outcome_distribution_per_batch()
@@ -331,7 +382,7 @@ class ChartGenerator:
 
         if num_batches == 0:
             ax.text(0.5, 0.5, 'No batch data', ha='center', va='center', transform=ax.transAxes)
-            ax.set_title('Outcome Distribution Over Time')
+            ax.set_title('Outcome Distribution')
             return
 
         x = np.arange(num_batches)
@@ -363,7 +414,7 @@ class ChartGenerator:
 
         ax.set_xlabel('Batch Start Episode')
         ax.set_ylabel('Percentage (%)')
-        ax.set_title('Outcome Distribution Over Time')
+        ax.set_title('Outcome Distribution')
         ax.legend(loc='upper right', fontsize=8)
         ax.set_ylim(0, 100)
         ax.set_xlim(0, num_batches - 1)
