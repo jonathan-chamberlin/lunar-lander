@@ -479,6 +479,215 @@ class DiagnosticsTracker:
             failure_behavior_rates=failure_behavior_rates,
         )
 
+    def get_streak_statistics(self) -> Dict[str, Any]:
+        """Compute consecutive success streak statistics.
+
+        Returns:
+            Dictionary with streak data including max streak, current streak,
+            streak history, and streak break analysis.
+        """
+        if not self.episode_results:
+            return {
+                'max_streak': 0,
+                'max_streak_episode': 0,
+                'current_streak': 0,
+                'streaks': [],
+                'streak_breaks': []
+            }
+
+        streaks = []
+        current_streak = 0
+        max_streak = 0
+        max_streak_episode = 0
+
+        # Track when streaks of 5+ break
+        streak_breaks = []  # List of (episode_num, streak_length, outcome, env_reward)
+
+        for i, result in enumerate(self.episode_results):
+            if result.success:
+                current_streak += 1
+                if current_streak > max_streak:
+                    max_streak = current_streak
+                    max_streak_episode = result.episode_num
+            else:
+                # Streak broken - record if it was a significant streak (5+)
+                if current_streak >= 5:
+                    outcome = self.behavior_reports[i].outcome if i < len(self.behavior_reports) else 'UNKNOWN'
+                    streak_breaks.append({
+                        'episode': result.episode_num,
+                        'streak_length': current_streak,
+                        'outcome': outcome,
+                        'env_reward': result.env_reward
+                    })
+                current_streak = 0
+            streaks.append(current_streak)
+
+        return {
+            'max_streak': max_streak,
+            'max_streak_episode': max_streak_episode,
+            'current_streak': current_streak,
+            'streaks': streaks,
+            'streak_breaks': streak_breaks
+        }
+
+    def get_env_reward_distribution(self) -> Dict[str, Any]:
+        """Get env_reward distribution for different outcomes.
+
+        Returns:
+            Dictionary with env_reward statistics for landed vs other outcomes.
+        """
+        if not self.episode_results or not self.behavior_reports:
+            return {}
+
+        landed_outcomes = {'LANDED_PERFECTLY', 'LANDED_SOFTLY', 'LANDED_HARD',
+                          'LANDED_TILTED', 'LANDED_ONE_LEG', 'LANDED_SLIDING'}
+
+        landed_rewards = []
+        crashed_rewards = []
+        other_rewards = []
+
+        for i, result in enumerate(self.episode_results):
+            if i >= len(self.behavior_reports):
+                break
+            outcome = self.behavior_reports[i].outcome
+
+            if outcome in landed_outcomes:
+                landed_rewards.append(result.env_reward)
+            elif 'CRASHED' in outcome:
+                crashed_rewards.append(result.env_reward)
+            else:
+                other_rewards.append(result.env_reward)
+
+        stats = {}
+        if landed_rewards:
+            landed_arr = np.array(landed_rewards)
+            stats['landed'] = {
+                'count': len(landed_rewards),
+                'mean': float(np.mean(landed_arr)),
+                'std': float(np.std(landed_arr)),
+                'min': float(np.min(landed_arr)),
+                'max': float(np.max(landed_arr)),
+                'above_200': sum(1 for r in landed_rewards if r >= 200),
+                'above_200_pct': sum(1 for r in landed_rewards if r >= 200) / len(landed_rewards) * 100,
+                'in_range_180_200': sum(1 for r in landed_rewards if 180 <= r < 200),
+                'in_range_150_180': sum(1 for r in landed_rewards if 150 <= r < 180),
+                'below_150': sum(1 for r in landed_rewards if r < 150),
+                'rewards': landed_rewards  # For histogram
+            }
+        if crashed_rewards:
+            stats['crashed'] = {
+                'count': len(crashed_rewards),
+                'mean': float(np.mean(crashed_rewards)),
+                'min': float(np.min(crashed_rewards)),
+                'max': float(np.max(crashed_rewards)),
+            }
+
+        return stats
+
+    def get_advanced_statistics(self) -> Dict[str, Any]:
+        """Compute advanced statistics for deeper training analysis.
+
+        Returns:
+            Dictionary with env_reward stats, rolling rates, near-misses, etc.
+        """
+        if not self.episode_results:
+            return {}
+
+        results = self.episode_results
+        env_rewards = [r.env_reward for r in results]
+        n = len(results)
+
+        stats = {}
+
+        # 1. Env reward statistics (separate from total reward)
+        stats['env_reward'] = {
+            'mean': float(np.mean(env_rewards)),
+            'std': float(np.std(env_rewards)),
+            'max': float(np.max(env_rewards)),
+            'min': float(np.min(env_rewards)),
+        }
+
+        # 2. Recent vs overall comparison (last 100 vs all)
+        if n >= 100:
+            recent_100 = results[-100:]
+            recent_env_rewards = [r.env_reward for r in recent_100]
+            recent_successes = sum(1 for r in recent_100 if r.success)
+            stats['recent_100'] = {
+                'env_reward_mean': float(np.mean(recent_env_rewards)),
+                'success_count': recent_successes,
+                'success_rate': recent_successes / 100 * 100,
+            }
+
+        # 3. Rolling success rates (last 50 and last 100)
+        if n >= 50:
+            last_50_successes = sum(1 for r in results[-50:] if r.success)
+            stats['rolling_success_rate_50'] = last_50_successes / 50 * 100
+        if n >= 100:
+            last_100_successes = sum(1 for r in results[-100:] if r.success)
+            stats['rolling_success_rate_100'] = last_100_successes / 100 * 100
+
+        # 4. Near-miss count (env_reward 180-199)
+        near_misses = [r for r in results if 180 <= r.env_reward < 200]
+        stats['near_misses'] = {
+            'count': len(near_misses),
+            'episodes': [r.episode_num for r in near_misses[-10:]],  # Last 10
+        }
+
+        # 5. Time to first success (first episode with env_reward >= 200)
+        first_success_episode = None
+        for r in results:
+            if r.success:
+                first_success_episode = r.episode_num
+                break
+        stats['first_success_episode'] = first_success_episode
+
+        # 6. Best recent streak (max streak in last 200 episodes)
+        if n >= 50:
+            lookback = min(200, n)
+            recent_results = results[-lookback:]
+            max_recent_streak = 0
+            current_streak = 0
+            for r in recent_results:
+                if r.success:
+                    current_streak += 1
+                    max_recent_streak = max(max_recent_streak, current_streak)
+                else:
+                    current_streak = 0
+            stats['max_streak_last_200'] = max_recent_streak
+
+        # 7. Landing quality for successful episodes (env_reward >= 200)
+        successful_episodes = [r for r in results if r.success]
+        if successful_episodes:
+            success_env_rewards = [r.env_reward for r in successful_episodes]
+            stats['successful_landings'] = {
+                'count': len(successful_episodes),
+                'env_reward_mean': float(np.mean(success_env_rewards)),
+                'env_reward_std': float(np.std(success_env_rewards)),
+                'env_reward_min': float(np.min(success_env_rewards)),
+                'env_reward_max': float(np.max(success_env_rewards)),
+            }
+
+            # Get behaviors for successful episodes if available
+            if self.behavior_reports and len(self.behavior_reports) == n:
+                success_indices = [i for i, r in enumerate(results) if r.success]
+                success_behaviors: Dict[str, int] = {}
+                for idx in success_indices:
+                    for behavior in self.behavior_reports[idx].behaviors:
+                        success_behaviors[behavior] = success_behaviors.get(behavior, 0) + 1
+
+                # Calculate rates for key quality behaviors
+                num_successes = len(successful_episodes)
+                stats['success_quality'] = {
+                    'stayed_upright': success_behaviors.get('STAYED_UPRIGHT', 0) / num_successes * 100,
+                    'stayed_centered': success_behaviors.get('STAYED_CENTERED', 0) / num_successes * 100,
+                    'controlled_descent': success_behaviors.get('CONTROLLED_DESCENT', 0) / num_successes * 100,
+                    'clean_touchdown': success_behaviors.get('TOUCHED_DOWN_CLEAN', 0) / num_successes * 100,
+                    'landed_perfectly': success_behaviors.get('LANDED_PERFECTLY', 0) / num_successes * 100,
+                    'landed_softly': success_behaviors.get('LANDED_SOFTLY', 0) / num_successes * 100,
+                }
+
+        return stats
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert all tracked data to a dictionary for serialization."""
         return {
@@ -513,7 +722,7 @@ class DiagnosticsReporter:
         # Reward statistics
         print(f"\n--- REWARD STATISTICS ---")
         print(f"Total episodes: {summary.total_episodes}")
-        print(f"Successes: {summary.num_successes} (episodes: {self.tracker.successes})")
+        print(f"Successes: {summary.num_successes}")
         print(f"Success rate: {summary.success_rate * 100:.1f}%")
         print(f"Mean reward: {summary.mean_reward:.2f}")
         print(f"Max reward: {summary.max_reward:.2f}")
@@ -521,6 +730,9 @@ class DiagnosticsReporter:
 
         if summary.final_50_mean_reward is not None:
             print(f"Final 50 episodes mean reward: {summary.final_50_mean_reward:.2f}")
+
+        # Advanced statistics
+        self._print_advanced_statistics()
 
         # Action statistics
         print(f"\n--- ACTION STATISTICS ---")
@@ -572,6 +784,12 @@ class DiagnosticsReporter:
         # Behavior statistics
         self._print_behavior_statistics()
 
+        # Streak statistics
+        self._print_streak_statistics()
+
+        # Env reward distribution for landings
+        self._print_env_reward_distribution()
+
         # Recent episodes
         self._print_recent_episodes()
 
@@ -581,6 +799,128 @@ class DiagnosticsReporter:
         print("\n" + "=" * 80)
         print("END OF DIAGNOSTICS")
         print("=" * 80)
+
+    def _print_advanced_statistics(self) -> None:
+        """Print advanced training statistics."""
+        stats = self.tracker.get_advanced_statistics()
+
+        if not stats:
+            return
+
+        print(f"\n--- ADVANCED STATISTICS ---")
+
+        # Env reward stats
+        if 'env_reward' in stats:
+            env = stats['env_reward']
+            print(f"Env reward: mean={env['mean']:.1f}, std={env['std']:.1f}, "
+                  f"range=[{env['min']:.1f}, {env['max']:.1f}]")
+
+        # First success
+        if stats.get('first_success_episode') is not None:
+            print(f"First success (env >= 200): episode {stats['first_success_episode']}")
+        else:
+            print(f"First success (env >= 200): not yet achieved")
+
+        # Near misses
+        if 'near_misses' in stats:
+            nm = stats['near_misses']
+            print(f"Near misses (180-199): {nm['count']} episodes")
+
+        # Rolling success rates
+        if 'rolling_success_rate_50' in stats:
+            print(f"Rolling success rate (last 50): {stats['rolling_success_rate_50']:.1f}%")
+        if 'rolling_success_rate_100' in stats:
+            print(f"Rolling success rate (last 100): {stats['rolling_success_rate_100']:.1f}%")
+
+        # Recent vs overall
+        if 'recent_100' in stats:
+            recent = stats['recent_100']
+            overall_mean = stats['env_reward']['mean']
+            diff = recent['env_reward_mean'] - overall_mean
+            trend = "↑" if diff > 5 else "↓" if diff < -5 else "→"
+            print(f"Last 100 vs overall: env_reward {recent['env_reward_mean']:.1f} vs {overall_mean:.1f} ({trend})")
+
+        # Max streak in recent episodes
+        if 'max_streak_last_200' in stats:
+            print(f"Max streak (last 200 episodes): {stats['max_streak_last_200']}")
+
+        # Successful landing quality
+        if 'successful_landings' in stats:
+            sl = stats['successful_landings']
+            print(f"\n  SUCCESSFUL LANDINGS (env >= 200):")
+            print(f"    Count: {sl['count']}")
+            print(f"    Env reward: mean={sl['env_reward_mean']:.1f}, std={sl['env_reward_std']:.1f}")
+            print(f"    Range: [{sl['env_reward_min']:.1f}, {sl['env_reward_max']:.1f}]")
+
+            if 'success_quality' in stats:
+                sq = stats['success_quality']
+                print(f"\n  SUCCESS QUALITY BEHAVIORS:")
+                print(f"    Stayed upright:      {sq['stayed_upright']:5.1f}%")
+                print(f"    Stayed centered:     {sq['stayed_centered']:5.1f}%")
+                print(f"    Controlled descent:  {sq['controlled_descent']:5.1f}%")
+                print(f"    Clean touchdown:     {sq['clean_touchdown']:5.1f}%")
+                print(f"    Landed perfectly:    {sq['landed_perfectly']:5.1f}%")
+                print(f"    Landed softly:       {sq['landed_softly']:5.1f}%")
+
+    def _print_streak_statistics(self) -> None:
+        """Print consecutive success streak statistics."""
+        streak_stats = self.tracker.get_streak_statistics()
+
+        print(f"\n--- CONSECUTIVE SUCCESS STREAK ---")
+        print(f"Max streak: {streak_stats['max_streak']} (achieved at episode {streak_stats['max_streak_episode']})")
+        print(f"Current streak: {streak_stats['current_streak']}")
+
+        # Streak breaks analysis
+        streak_breaks = streak_stats['streak_breaks']
+        if streak_breaks:
+            print(f"\n  STREAK BREAKS (streaks of 5+ that ended):")
+            print(f"    {'Episode':<10} {'Streak':<8} {'Outcome':<24} {'Env Reward':<12}")
+            print(f"    {'-'*10} {'-'*8} {'-'*24} {'-'*12}")
+
+            # Show last 10 streak breaks
+            for break_info in streak_breaks[-10:]:
+                print(f"    {break_info['episode']:<10} {break_info['streak_length']:<8} "
+                      f"{break_info['outcome']:<24} {break_info['env_reward']:<12.1f}")
+
+            # Summarize what breaks streaks
+            outcome_counts: Dict[str, int] = {}
+            for break_info in streak_breaks:
+                outcome = break_info['outcome']
+                outcome_counts[outcome] = outcome_counts.get(outcome, 0) + 1
+
+            if len(streak_breaks) >= 3:
+                print(f"\n  STREAK BREAK CAUSES (total {len(streak_breaks)} breaks):")
+                sorted_outcomes = sorted(outcome_counts.items(), key=lambda x: -x[1])
+                for outcome, count in sorted_outcomes[:5]:
+                    pct = count / len(streak_breaks) * 100
+                    print(f"    {outcome:<24} {count:3} ({pct:5.1f}%)")
+        else:
+            print("  No significant streaks (5+) have been broken yet")
+
+    def _print_env_reward_distribution(self) -> None:
+        """Print env_reward distribution for landed episodes."""
+        dist = self.tracker.get_env_reward_distribution()
+
+        print(f"\n--- ENV REWARD DISTRIBUTION (LANDINGS) ---")
+
+        if 'landed' not in dist:
+            print("  No landing data available")
+            return
+
+        landed = dist['landed']
+        print(f"  Total landings: {landed['count']}")
+        print(f"  Mean env_reward: {landed['mean']:.1f} (std: {landed['std']:.1f})")
+        print(f"  Range: {landed['min']:.1f} to {landed['max']:.1f}")
+
+        print(f"\n  ENV REWARD BREAKDOWN:")
+        print(f"    >= 200 (SUCCESS):    {landed['above_200']:4} ({landed['above_200_pct']:5.1f}%)")
+        print(f"    180-199 (near miss): {landed['in_range_180_200']:4} ({landed['in_range_180_200'] / landed['count'] * 100:5.1f}%)")
+        print(f"    150-179:             {landed['in_range_150_180']:4} ({landed['in_range_150_180'] / landed['count'] * 100:5.1f}%)")
+        print(f"    < 150:               {landed['below_150']:4} ({landed['below_150'] / landed['count'] * 100:5.1f}%)")
+
+        if 'crashed' in dist:
+            crashed = dist['crashed']
+            print(f"\n  Crashed episodes: {crashed['count']} (mean: {crashed['mean']:.1f})")
 
     def _print_recent_episodes(self, n: int = 5) -> None:
         """Print details of recent episodes."""

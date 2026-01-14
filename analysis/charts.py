@@ -147,12 +147,27 @@ class ChartGenerator:
         if fig is None:
             return None
 
-        # Set minimum window size to prevent label overlap (in pixels)
-        # 950x650 is slightly larger than where labels would collide
+        # Set window size to 95% of screen width
         try:
             fig_manager = plt.get_current_fig_manager()
             if hasattr(fig_manager, 'window'):
-                fig_manager.window.minsize(950, 650)
+                # Get screen dimensions using tkinter
+                window = fig_manager.window
+                screen_width = window.winfo_screenwidth()
+                screen_height = window.winfo_screenheight()
+
+                # Calculate 95% width and proportional height (maintain aspect ratio)
+                target_width = int(screen_width * 0.95)
+                # Original figure is 12.5x6.5, so height = width * (6.5/12.5)
+                target_height = int(target_width * (6.5 / 12.5))
+
+                # Center the window horizontally
+                x_position = int((screen_width - target_width) / 2)
+                y_position = 50  # Small offset from top
+
+                # Set geometry: widthxheight+x+y
+                window.geometry(f"{target_width}x{target_height}+{x_position}+{y_position}")
+                window.minsize(950, 650)
         except Exception:
             pass  # Not all backends support this
 
@@ -237,8 +252,11 @@ class ChartGenerator:
             logger.warning(f"Failed to plot report card: {e}")
             axes[1, 2].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[1, 2].transAxes)
 
-        # Leave axes[1, 3] empty or use for future chart
-        axes[1, 3].axis('off')
+        try:
+            self._plot_landing_reward_histogram(axes[1, 3])
+        except Exception as e:
+            logger.warning(f"Failed to plot landing histogram: {e}")
+            axes[1, 3].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[1, 3].transAxes)
 
         return fig
 
@@ -597,6 +615,56 @@ class ChartGenerator:
         ax.set_title('Behavior Report Card: First 100 vs Last 100')
         ax.legend(loc='lower right', fontsize=8)
         ax.set_xlim(0, 105)
+
+    def _plot_landing_reward_histogram(self, ax: plt.Axes) -> None:
+        """Chart: Histogram of env_reward for landed episodes.
+
+        Shows distribution of env_rewards when the agent lands,
+        with the 200 success threshold marked.
+
+        Args:
+            ax: Matplotlib axes to plot on
+        """
+        # Get env_reward distribution from tracker
+        dist = self.tracker.get_env_reward_distribution()
+
+        if 'landed' not in dist or not dist['landed']['rewards']:
+            ax.text(0.5, 0.5, 'No landing data', ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('Landing Env Reward')
+            return
+
+        rewards = dist['landed']['rewards']
+
+        # Create histogram with fixed bins spanning typical reward range
+        bins = np.arange(-200, 320, 20)  # -200 to 300 in steps of 20
+        counts, edges, patches = ax.hist(rewards, bins=bins, color='#3498db', alpha=0.7, edgecolor='black', linewidth=0.5)
+
+        # Color bars based on whether they're above/below 200
+        for i, (patch, edge) in enumerate(zip(patches, edges[:-1])):
+            if edge >= 200:
+                patch.set_facecolor('#2ecc71')  # Green for success
+            elif edge >= 180:
+                patch.set_facecolor('#f39c12')  # Orange for near-miss
+            else:
+                patch.set_facecolor('#3498db')  # Blue for below
+
+        # Add success threshold line
+        ax.axvline(x=200, color='green', linestyle='--', linewidth=2, label='Success (200)')
+
+        # Add statistics annotation
+        mean_reward = np.mean(rewards)
+        above_200 = sum(1 for r in rewards if r >= 200)
+        pct_above = above_200 / len(rewards) * 100
+
+        ax.annotate(f'Mean: {mean_reward:.0f}\n>= 200: {pct_above:.1f}%',
+                   xy=(0.95, 0.95), xycoords='axes fraction',
+                   ha='right', va='top', fontsize=8,
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        ax.set_xlabel('Env Reward')
+        ax.set_ylabel('Count')
+        ax.set_title('Landing Env Reward Distribution')
+        ax.legend(loc='upper left', fontsize=7)
 
     # =========================================================================
     # Helper Methods

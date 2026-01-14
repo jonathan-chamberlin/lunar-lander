@@ -531,8 +531,11 @@ def main() -> None:
 
                     completed_episodes += 1
 
-                    # Periodic chart generation every 100 episodes
+                    # Periodic diagnostics and chart generation every 100 episodes
                     if completed_episodes % 100 == 0:
+                        # Print diagnostics summary
+                        reporter.print_summary()
+
                         # Create chart folder on first periodic chart
                         if chart_folder is None:
                             chart_folder = os.path.join("chart_images", simulation_start_timestamp)
@@ -629,8 +632,11 @@ def main() -> None:
                         noise.reset(i)
                         completed_episodes += 1
 
-                        # Periodic chart generation every 100 episodes
+                        # Periodic diagnostics and chart generation every 100 episodes
                         if completed_episodes % 100 == 0:
+                            # Print diagnostics summary
+                            reporter.print_summary()
+
                             # Create chart folder on first periodic chart
                             if chart_folder is None:
                                 chart_folder = os.path.join("chart_images", simulation_start_timestamp)
