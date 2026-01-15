@@ -73,6 +73,8 @@ Resume claude instance. My goal is to make sure that each behavior is correctly 
 
 Reverse the order of the items on the key in the outcome distribution chart. This will make it so the order of items in the key matches the order of the items displayed in the chart
 
+Make it so the episode reward over time chart has a line for the 50 episode average for the env reward, and make it visually distinct from the existing 50 episode avg
+
 In the behavior frequency heatmap, put the good behaviors on top and the bad behaviors on the bottom, and have a black line split the top and bottom for visaul clarity
 
 Create boolean flag that when true it records every frame of all rendered runs in a folder creeted inside the chart_images folder for that run. Then create another file called turn_into_video.py. At the top there is a variable where i input the path to a subfolder with all the frames. in that file there is also a video_framerate variable which is the framerate that i want the videos it makes to run at. When I run just that file specifically, it convers it compiles the frames in that folder those into a videom and puts that video into the same folder that the frames folder is a part of.Which it puts inside the folder for that run (not inside the subfolder with the every frame)
