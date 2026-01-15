@@ -12,32 +12,32 @@ from typing import Dict, Set, List
 
 BEHAVIOR_CATEGORIES: Dict[str, Dict] = {
     'horizontal': {
-        'icon': '<->',
+        'icon': '↔',
         'behaviors': {'STAYED_CENTERED', 'DRIFTED_LEFT', 'DRIFTED_RIGHT', 'RETURNED_TO_CENTER',
                       'HORIZONTAL_OSCILLATION', 'STRONG_LATERAL_VELOCITY'}
     },
     'vertical': {
-        'icon': '|',
+        'icon': '↕',
         'behaviors': {'CONTROLLED_DESCENT', 'SLOW_DESCENT', 'RAPID_DESCENT', 'HOVER_MAINTAINED',
                       'ASCENDED', 'YO_YO_PATTERN', 'CONTINUOUS_BURN', 'LATE_BRAKING', 'FREEFALL',
                       'STALLED_THEN_FELL', 'DIRECT_APPROACH', 'CURVED_APPROACH', 'SPIRAL_DESCENT',
                       'ZIGZAG_DESCENT', 'SUICIDE_BURN', 'GRADUAL_SLOWDOWN', 'HOVER_NEAR_GROUND_TIMEOUT'}
     },
     'orientation': {
-        'icon': '@',
+        'icon': '↻',
         'behaviors': {'STAYED_UPRIGHT', 'SLIGHT_LEFT_LEAN', 'SLIGHT_RIGHT_LEAN', 'HEAVY_LEFT_TILT',
                       'HEAVY_RIGHT_TILT', 'FLIPPED_OVER', 'SPINNING_UNCONTROLLED', 'RECOVERED_FROM_TILT',
                       'PROGRESSIVE_TILT', 'WOBBLING', 'NEVER_STABILIZED', 'CONTROLLED_THROUGHOUT',
                       'LOST_CONTROL_LATE', 'OVERCORRECTED_TO_CRASH'}
     },
     'thrust': {
-        'icon': '*',
+        'icon': '🔥',
         'behaviors': {'MAIN_THRUST_HEAVY', 'MAIN_THRUST_MODERATE', 'MAIN_THRUST_LIGHT', 'MAIN_THRUST_NONE',
                       'SIDE_THRUST_LEFT_BIAS', 'SIDE_THRUST_RIGHT_BIAS', 'SIDE_THRUST_BALANCED',
                       'ERRATIC_THRUST', 'SMOOTH_THRUST', 'FULL_THROTTLE_BURST'}
     },
     'contact': {
-        'icon': '#',
+        'icon': '👣',
         'behaviors': {'NO_CONTACT_MADE', 'SCRAPED_LEFT_LEG', 'SCRAPED_RIGHT_LEG', 'TOUCHED_DOWN_CLEAN',
                       'BOUNCED', 'MULTIPLE_TOUCHDOWNS', 'PROLONGED_ONE_LEG', 'REACHED_LOW_ALTITUDE',
                       'STAYED_HIGH', 'PEAKED_ABOVE_START', 'GROUND_APPROACH_ABORT'}
@@ -70,22 +70,29 @@ OUTCOME_CATEGORIES: Dict[str, List[str]] = {
 OUTCOME_CATEGORY_ORDER: List[str] = ['landed', 'crashed', 'timed_out', 'flew_off']
 
 # Mapping from specific outcome to category (used in charts)
+# "Landed" = proper landings only (upright, controlled)
+# "Crashed" = impacts including bad touchdowns (one leg, tilted, hard)
 OUTCOME_TO_CATEGORY: Dict[str, str] = {
+    # Good landings
     'LANDED_PERFECTLY': 'landed',
     'LANDED_SOFTLY': 'landed',
-    'LANDED_HARD': 'landed',
-    'LANDED_TILTED': 'landed',
-    'LANDED_ONE_LEG': 'landed',
     'LANDED_SLIDING': 'landed',
     'TIMED_OUT_ON_GROUND': 'landed',
+    # Bad touchdowns count as crashes
+    'LANDED_HARD': 'crashed',
+    'LANDED_TILTED': 'crashed',
+    'LANDED_ONE_LEG': 'crashed',
+    # Actual crashes
     'CRASHED_FAST_VERTICAL': 'crashed',
     'CRASHED_FAST_TILTED': 'crashed',
     'CRASHED_SIDEWAYS': 'crashed',
     'CRASHED_SPINNING': 'crashed',
     'CRASHED_OTHER': 'crashed',
+    # Timeouts
     'TIMED_OUT_HOVERING': 'timed_out',
     'TIMED_OUT_DESCENDING': 'timed_out',
     'TIMED_OUT_ASCENDING': 'timed_out',
+    # Flew off screen
     'FLEW_OFF_TOP': 'flew_off',
     'FLEW_OFF_LEFT': 'flew_off',
     'FLEW_OFF_RIGHT': 'flew_off',

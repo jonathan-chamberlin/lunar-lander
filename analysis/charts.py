@@ -502,7 +502,7 @@ class ChartGenerator:
 
         if num_episodes < 100:
             ax.text(0.5, 0.5, 'Need 100+ episodes', ha='center', va='center', transform=ax.transAxes)
-            ax.set_title('Behavior Report Card')
+            ax.set_title('Report Card')
             return
 
         # Get frequencies for first and last 100 episodes
@@ -527,7 +527,7 @@ class ChartGenerator:
 
         if not behaviors:
             ax.text(0.5, 0.5, 'No behavior data', ha='center', va='center', transform=ax.transAxes)
-            ax.set_title('Behavior Report Card')
+            ax.set_title('Report Card')
             return
 
         # Sort by delta (most improved at top)
@@ -546,7 +546,7 @@ class ChartGenerator:
         ax.set_yticks(y_pos)
         ax.set_yticklabels(behaviors, fontsize=8)
         ax.set_xlabel('Frequency (%)')
-        ax.set_title('Behavior Report Card: First 100 vs Last 100')
+        ax.set_title('Report Card (First vs Last 100)')
         ax.legend(loc='lower right', fontsize=8)
         ax.set_xlim(0, 105)
 
@@ -564,7 +564,7 @@ class ChartGenerator:
 
         if 'landed' not in dist or not dist['landed']['rewards']:
             ax.text(0.5, 0.5, 'No landing data', ha='center', va='center', transform=ax.transAxes)
-            ax.set_title('Landing Env Reward')
+            ax.set_title('Env Reward Distribution')
             return
 
         rewards = dist['landed']['rewards']
@@ -597,7 +597,7 @@ class ChartGenerator:
 
         ax.set_xlabel('Env Reward')
         ax.set_ylabel('Count')
-        ax.set_title('Landing Env Reward Distribution')
+        ax.set_title('Env Reward Distribution')
         ax.legend(loc='upper left', fontsize=7)
 
     # =========================================================================

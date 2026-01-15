@@ -67,7 +67,9 @@ LEFT OFF: Copy and paste that huge print statement into claude. "Here are diagno
 
 (DONE) Here are my diagnostics for this lunar lander simulation. It is landing consistenly, but it isn't getting as much env reward as i want. Analyze multiple causes. My ultimate goal is to make it so the agent can get 100 runs consecutively where env reward >=200. For the outputs of the current codebase, look at 
 
-resume refactor
+(DONE) resume refactor
+
+Create boolean flag that when true it records every frame of all rendered runs in a folder creeted inside the chart_images folder for that run. Then create another file called turn_into_video.py. At the top there is a variable where i input the path to a subfolder with all the frames. When I run just that file specifically, it convers it compiles the frames in that folder those into a videom and puts that video into the same folder that the frames folder is a part of.Which it puts inside the folder for that run (not inside the subfolder with the every frame)
 
 run simulation and feed in print diagnostics and the charts into claude so it can identify how to make it so i get 200>= env reward for 100 consecutive runs.
 

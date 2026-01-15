@@ -58,38 +58,25 @@ behavior_analyzer = BehaviorAnalyzer()
 def run_periodic_diagnostics(
     reporter: DiagnosticsReporter,
     diagnostics: DiagnosticsTracker,
-    chart_folder: Optional[str],
-    simulation_start_timestamp: str,
+    chart_folder: str,
     completed_episodes: int
-) -> Optional[str]:
+) -> None:
     """Run periodic diagnostics and chart generation.
 
     Args:
         reporter: DiagnosticsReporter for printing summary
         diagnostics: DiagnosticsTracker with collected data
-        chart_folder: Current chart folder path (may be None)
-        simulation_start_timestamp: Timestamp for folder naming
+        chart_folder: Path to chart folder for this run
         completed_episodes: Number of episodes completed
-
-    Returns:
-        Updated chart_folder path (creates folder if None)
     """
     # Print diagnostics summary
     reporter.print_summary()
-
-    # Create chart folder on first periodic chart
-    if chart_folder is None:
-        chart_folder = os.path.join("chart_images", simulation_start_timestamp)
-        os.makedirs(chart_folder, exist_ok=True)
-        logger.info(f"Created chart folder: {chart_folder}")
 
     # Generate chart to file and open with system viewer
     chart_path = os.path.join(chart_folder, f"chart_episode_{completed_episodes}.png")
     chart_gen = ChartGenerator(diagnostics, batch_size=50)
     if chart_gen.generate_to_file(chart_path):
         os.startfile(chart_path)
-
-    return chart_folder
 
 
 def finalize_episode(
@@ -135,14 +122,14 @@ def finalize_episode(
         diagnostics.record_behavior(behavior_report, success)
 
     # Format the main status line
-    status_icon = '[OK]' if success else '[X]'
+    status_icon = '✓' if success else '✗'
     outcome = behavior_report.outcome if behavior_report else 'UNKNOWN'
-    rendered_tag = ' [R]' if rendered else ''
+    rendered_tag = ' 🎬' if rendered else ''
     landed_safely = outcome in SAFE_LANDING_OUTCOMES
-    landing_indicator = '[SAFE] Landed Safely' if landed_safely else '[FAIL] Didn\'t land safely'
+    landing_indicator = '✅ Landed Safely' if landed_safely else '❌ Didn\'t land safely'
 
     # Print main line
-    print(f"Run {episode_num} {status_icon} {outcome}{rendered_tag} {landing_indicator} | Reward: {total_reward:.1f} (env: {env_reward:.1f} / shaped: {shaped_bonus:+.1f})")
+    print(f"Run {episode_num} {status_icon} {outcome}{rendered_tag} {landing_indicator} 🥕 Reward: {total_reward:.1f} (env: {env_reward:.1f} / shaped: {shaped_bonus:+.1f})")
 
     # Print categorized behaviors
     if behavior_report and behavior_report.behaviors:
@@ -383,9 +370,11 @@ def main() -> None:
     user_quit = False
     error_occurred = None
 
-    # Chart folder for this simulation run (created on first periodic chart)
-    simulation_start_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    chart_folder: Optional[str] = None
+    # Chart folder for this simulation run (created immediately)
+    simulation_start_timestamp = datetime.now().strftime("%Y-%m-%d %Hh%Mm%Ss")
+    chart_folder = os.path.join("chart_images", simulation_start_timestamp)
+    os.makedirs(chart_folder, exist_ok=True)
+    logger.info(f"Created chart folder: {chart_folder}")
 
     # Maintenance interval (every N episodes, perform cleanup)
     MAINTENANCE_INTERVAL = 100
@@ -469,9 +458,8 @@ def main() -> None:
 
                     # Periodic diagnostics and chart generation every 100 episodes
                     if completed_episodes % 100 == 0:
-                        chart_folder = run_periodic_diagnostics(
-                            reporter, diagnostics, chart_folder,
-                            simulation_start_timestamp, completed_episodes
+                        run_periodic_diagnostics(
+                            reporter, diagnostics, chart_folder, completed_episodes
                         )
 
                     continue
@@ -560,9 +548,8 @@ def main() -> None:
 
                         # Periodic diagnostics and chart generation every 100 episodes
                         if completed_episodes % 100 == 0:
-                            chart_folder = run_periodic_diagnostics(
-                                reporter, diagnostics, chart_folder,
-                                simulation_start_timestamp, completed_episodes
+                            run_periodic_diagnostics(
+                                reporter, diagnostics, chart_folder, completed_episodes
                             )
 
                         if completed_episodes >= config.run.num_episodes:

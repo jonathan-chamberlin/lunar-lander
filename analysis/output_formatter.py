@@ -50,6 +50,6 @@ def format_behavior_output(behavior_report: "BehaviorReport") -> str:
             lines.append(f"    {icon} {behaviors_str}")
 
     if uncategorized:
-        lines.append(f"    ? {', '.join(uncategorized)}")
+        lines.append(f"    📋 {', '.join(uncategorized)}")
 
     return '\n'.join(lines)
