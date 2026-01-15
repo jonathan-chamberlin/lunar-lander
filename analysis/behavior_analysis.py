@@ -202,6 +202,14 @@ class BehaviorAnalyzer:
             if low_altitude_pct > 0.5 and centered_pct > 0.5 and low_velocity:
                 behaviors.append("HOVERED_OVER_GOAL_TIMEOUT")
 
+        # Override outcome for sustained bouncing behavior
+        # This exploitative pattern involves repeated bouncing with one leg on ground
+        behavior_set = set(behaviors)
+        if ('BOUNCED' in behavior_set and
+                'MULTIPLE_TOUCHDOWNS' in behavior_set and
+                'PROLONGED_ONE_LEG' in behavior_set):
+            outcome = "SUSTAINED_BOUNCING"
+
         return BehaviorReport(outcome, behaviors)
 
     def _detect_outcome(
@@ -233,10 +241,11 @@ class BehaviorAnalyzer:
         one_leg = (final_leg1 > 0.5) != (final_leg2 > 0.5)
 
         # Check for flying off screen
-        # Consider both position and velocity/tilt to determine direction
+        # Consider both position AND velocity to catch cases where episode ends before crossing threshold
+        # The environment often terminates slightly before the lander fully exits
         off_top = final_y > Thresholds.OFF_SCREEN_Y
-        off_left = final_x < -Thresholds.OFF_SCREEN_X
-        off_right = final_x > Thresholds.OFF_SCREEN_X
+        off_left = final_x < -Thresholds.OFF_SCREEN_X or (final_x < -0.7 and final_vx < -0.2)
+        off_right = final_x > Thresholds.OFF_SCREEN_X or (final_x > 0.7 and final_vx > 0.2)
 
         if off_top or off_left or off_right:
             # Determine primary direction based on velocity and tilt

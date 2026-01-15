@@ -64,10 +64,11 @@ OUTCOME_CATEGORIES: Dict[str, List[str]] = {
     'crashed': ['CRASHED_FAST_VERTICAL', 'CRASHED_FAST_TILTED', 'CRASHED_SIDEWAYS', 'CRASHED_SPINNING'],
     'timed_out': ['TIMED_OUT_HOVERING', 'TIMED_OUT_DESCENDING', 'TIMED_OUT_ASCENDING'],
     'flew_off': ['FLEW_OFF_TOP', 'FLEW_OFF_LEFT', 'FLEW_OFF_RIGHT', 'FLEW_OFF_LEFT_TILTED', 'FLEW_OFF_RIGHT_TILTED'],
+    'bouncing': ['SUSTAINED_BOUNCING'],
 }
 
 # List of category names in display order (used in charts)
-OUTCOME_CATEGORY_ORDER: List[str] = ['landed', 'crashed', 'timed_out', 'flew_off']
+OUTCOME_CATEGORY_ORDER: List[str] = ['landed', 'crashed', 'timed_out', 'flew_off', 'bouncing']
 
 # Mapping from specific outcome to category (used in charts)
 # "Landed" = proper landings only (upright, controlled)
@@ -98,6 +99,8 @@ OUTCOME_TO_CATEGORY: Dict[str, str] = {
     'FLEW_OFF_RIGHT': 'flew_off',
     'FLEW_OFF_LEFT_TILTED': 'flew_off',
     'FLEW_OFF_RIGHT_TILTED': 'flew_off',
+    # Sustained bouncing (exploitative behavior)
+    'SUSTAINED_BOUNCING': 'bouncing',
 }
 
 # Colors for outcome categories in charts
@@ -106,6 +109,7 @@ OUTCOME_COLORS: Dict[str, str] = {
     'crashed': '#e74c3c',    # Red
     'timed_out': '#f39c12',  # Yellow/Orange
     'flew_off': '#3498db',   # Blue
+    'bouncing': '#9b59b6',   # Purple
 }
 
 # =============================================================================

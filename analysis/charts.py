@@ -367,7 +367,7 @@ class ChartGenerator:
         ax.set_xlabel('Batch Start Episode')
         ax.set_ylabel('Percentage (%)')
         ax.set_title('Outcome Distribution')
-        ax.legend(loc='upper right', fontsize=8)
+        ax.legend(loc='upper right', fontsize=8, reverse=True)
         ax.set_ylim(0, 100)
         ax.set_xlim(0, num_batches - 1)
 

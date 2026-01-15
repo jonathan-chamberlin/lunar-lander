@@ -8,10 +8,15 @@ This module orchestrates the training loop using components from:
 
 
 import gc
+import io
 import logging
 import os
 import sys
 import time
+
+# Force unbuffered stdout for real-time output display with UTF-8 encoding
+# (Windows console defaults to cp1252 which can't display Unicode symbols)
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 import traceback
 import warnings
 from datetime import datetime
