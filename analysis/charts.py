@@ -11,60 +11,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from analysis.diagnostics import DiagnosticsTracker
+from constants import (
+    REPORT_CARD_BEHAVIORS,
+    OUTCOME_CATEGORY_ORDER,
+    OUTCOME_COLORS,
+    OUTCOME_TO_CATEGORY
+)
 
 logger = logging.getLogger(__name__)
-
-
-# Behavior categories for report card
-REPORT_CARD_BEHAVIORS = [
-    # Good behaviors (should increase)
-    'STAYED_UPRIGHT',
-    'STAYED_CENTERED',
-    'CONTROLLED_DESCENT',
-    'CONTROLLED_THROUGHOUT',
-    'TOUCHED_DOWN_CLEAN',
-    'REACHED_LOW_ALTITUDE',
-    # Bad behaviors (should decrease)
-    'NEVER_STABILIZED',
-    'SPINNING_UNCONTROLLED',
-    'FREEFALL',
-    'ERRATIC_THRUST',
-    'CRASHED_FAST_VERTICAL',
-    'FLIPPED_OVER',
-]
-
-# Outcome categories for stacked area chart
-OUTCOME_CATEGORIES = ['landed', 'crashed', 'timed_out', 'flew_off']
-OUTCOME_COLORS = {
-    'landed': '#2ecc71',     # Green
-    'crashed': '#e74c3c',    # Red
-    'timed_out': '#f39c12',  # Yellow/Orange
-    'flew_off': '#3498db',   # Blue
-}
-
-# Outcome mapping from specific outcomes to categories
-OUTCOME_TO_CATEGORY = {
-    'LANDED_PERFECTLY': 'landed',
-    'LANDED_SOFTLY': 'landed',
-    'LANDED_HARD': 'landed',
-    'LANDED_TILTED': 'landed',
-    'LANDED_ONE_LEG': 'landed',
-    'LANDED_SLIDING': 'landed',
-    'TIMED_OUT_ON_GROUND': 'landed',
-    'CRASHED_FAST_VERTICAL': 'crashed',
-    'CRASHED_FAST_TILTED': 'crashed',
-    'CRASHED_SIDEWAYS': 'crashed',
-    'CRASHED_SPINNING': 'crashed',
-    'CRASHED_OTHER': 'crashed',
-    'TIMED_OUT_HOVERING': 'timed_out',
-    'TIMED_OUT_DESCENDING': 'timed_out',
-    'TIMED_OUT_ASCENDING': 'timed_out',
-    'FLEW_OFF_TOP': 'flew_off',
-    'FLEW_OFF_LEFT': 'flew_off',
-    'FLEW_OFF_RIGHT': 'flew_off',
-    'FLEW_OFF_LEFT_TILTED': 'flew_off',
-    'FLEW_OFF_RIGHT_TILTED': 'flew_off',
-}
 
 
 class ChartGenerator:
@@ -201,7 +155,6 @@ class ChartGenerator:
             return None
 
         # Create figure with 2x4 subplot grid
-        # Wider to accommodate 4 columns
         fig, axes = plt.subplots(
             2, 4,
             figsize=(12.5, 6.5),
@@ -209,56 +162,37 @@ class ChartGenerator:
         )
         fig.suptitle(f'Training Progress - {num_episodes} Episodes', fontsize=12, fontweight='bold')
 
-        # Generate each chart
-        try:
-            self._plot_reward_over_time(axes[0, 0])
-        except Exception as e:
-            logger.warning(f"Failed to plot reward chart: {e}")
-            axes[0, 0].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[0, 0].transAxes)
+        # Chart configurations: (axes_position, plot_method, chart_name)
+        chart_configs = [
+            (axes[0, 0], self._plot_reward_over_time, "reward"),
+            (axes[0, 1], self._plot_success_rate, "success rate"),
+            (axes[0, 2], self._plot_outcome_stacked_area, "outcome"),
+            (axes[0, 3], self._plot_episode_duration, "duration"),
+            (axes[1, 0], self._plot_consecutive_streak, "streak"),
+            (axes[1, 1], self._plot_behavior_heatmap, "behavior heatmap"),
+            (axes[1, 2], self._plot_behavior_report_card, "report card"),
+            (axes[1, 3], self._plot_landing_reward_histogram, "landing histogram"),
+        ]
 
-        try:
-            self._plot_success_rate(axes[0, 1])
-        except Exception as e:
-            logger.warning(f"Failed to plot success rate chart: {e}")
-            axes[0, 1].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[0, 1].transAxes)
-
-        try:
-            self._plot_outcome_stacked_area(axes[0, 2])
-        except Exception as e:
-            logger.warning(f"Failed to plot outcome chart: {e}")
-            axes[0, 2].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[0, 2].transAxes)
-
-        try:
-            self._plot_episode_duration(axes[0, 3])
-        except Exception as e:
-            logger.warning(f"Failed to plot duration chart: {e}")
-            axes[0, 3].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[0, 3].transAxes)
-
-        try:
-            self._plot_consecutive_streak(axes[1, 0])
-        except Exception as e:
-            logger.warning(f"Failed to plot streak chart: {e}")
-            axes[1, 0].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[1, 0].transAxes)
-
-        try:
-            self._plot_behavior_heatmap(axes[1, 1])
-        except Exception as e:
-            logger.warning(f"Failed to plot behavior heatmap: {e}")
-            axes[1, 1].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[1, 1].transAxes)
-
-        try:
-            self._plot_behavior_report_card(axes[1, 2])
-        except Exception as e:
-            logger.warning(f"Failed to plot report card: {e}")
-            axes[1, 2].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[1, 2].transAxes)
-
-        try:
-            self._plot_landing_reward_histogram(axes[1, 3])
-        except Exception as e:
-            logger.warning(f"Failed to plot landing histogram: {e}")
-            axes[1, 3].text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=axes[1, 3].transAxes)
+        # Generate each chart with error handling
+        for ax, plot_method, name in chart_configs:
+            self._safe_plot(ax, plot_method, name)
 
         return fig
+
+    def _safe_plot(self, ax: plt.Axes, plot_method, name: str) -> None:
+        """Safely execute a plot method with error handling.
+
+        Args:
+            ax: Matplotlib axes to plot on
+            plot_method: Method to call for plotting
+            name: Human-readable name for error messages
+        """
+        try:
+            plot_method(ax)
+        except Exception as e:
+            logger.warning(f"Failed to plot {name} chart: {e}")
+            ax.text(0.5, 0.5, f'Error: {e}', ha='center', va='center', transform=ax.transAxes)
 
     # =========================================================================
     # Individual Chart Methods
@@ -773,7 +707,7 @@ class ChartGenerator:
         num_batches = (num_episodes + self.batch_size - 1) // self.batch_size
 
         # Initialize result dict
-        result = {cat: [] for cat in OUTCOME_CATEGORIES}
+        result = {cat: [] for cat in OUTCOME_CATEGORY_ORDER}
 
         for batch_idx in range(num_batches):
             start = batch_idx * self.batch_size
@@ -782,18 +716,18 @@ class ChartGenerator:
             batch_len = len(batch)
 
             if batch_len == 0:
-                for cat in OUTCOME_CATEGORIES:
+                for cat in OUTCOME_CATEGORY_ORDER:
                     result[cat].append(0.0)
                 continue
 
             # Count outcomes in this batch
-            category_counts = {cat: 0 for cat in OUTCOME_CATEGORIES}
+            category_counts = {cat: 0 for cat in OUTCOME_CATEGORY_ORDER}
             for report in batch:
                 category = OUTCOME_TO_CATEGORY.get(report.outcome, 'crashed')
                 category_counts[category] += 1
 
             # Convert to percentages
-            for cat in OUTCOME_CATEGORIES:
+            for cat in OUTCOME_CATEGORY_ORDER:
                 result[cat].append((category_counts[cat] / batch_len) * 100)
 
         return result

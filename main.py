@@ -30,12 +30,14 @@ from training.environment import (
     compute_noise_scale,
     EpisodeManager
 )
-from training.network import OUActionNoise
+from training.noise import OUActionNoise
 from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from training.trainer import TD3Trainer
 from analysis.diagnostics import DiagnosticsTracker, DiagnosticsReporter
 from analysis.behavior_analysis import BehaviorAnalyzer
 from analysis.charts import ChartGenerator
+from constants import SAFE_LANDING_OUTCOMES
+from analysis.output_formatter import format_behavior_output
 
 # Configure logging
 logging.basicConfig(
@@ -53,107 +55,41 @@ warnings.filterwarnings("ignore")
 behavior_analyzer = BehaviorAnalyzer()
 
 
-# Behavior category mappings for pretty printing
-BEHAVIOR_CATEGORIES = {
-    'horizontal': {
-        'icon': '↔',
-        'behaviors': {'STAYED_CENTERED', 'DRIFTED_LEFT', 'DRIFTED_RIGHT', 'RETURNED_TO_CENTER',
-                      'HORIZONTAL_OSCILLATION', 'STRONG_LATERAL_VELOCITY'}
-    },
-    'vertical': {
-        'icon': '↕',
-        'behaviors': {'CONTROLLED_DESCENT', 'SLOW_DESCENT', 'RAPID_DESCENT', 'HOVER_MAINTAINED',
-                      'ASCENDED', 'YO_YO_PATTERN', 'CONTINUOUS_BURN', 'LATE_BRAKING', 'FREEFALL',
-                      'STALLED_THEN_FELL', 'DIRECT_APPROACH', 'CURVED_APPROACH', 'SPIRAL_DESCENT',
-                      'ZIGZAG_DESCENT', 'SUICIDE_BURN', 'GRADUAL_SLOWDOWN', 'HOVER_NEAR_GROUND_TIMEOUT'}
-    },
-    'orientation': {
-        'icon': '↻',
-        'behaviors': {'STAYED_UPRIGHT', 'SLIGHT_LEFT_LEAN', 'SLIGHT_RIGHT_LEAN', 'HEAVY_LEFT_TILT',
-                      'HEAVY_RIGHT_TILT', 'FLIPPED_OVER', 'SPINNING_UNCONTROLLED', 'RECOVERED_FROM_TILT',
-                      'PROGRESSIVE_TILT', 'WOBBLING', 'NEVER_STABILIZED', 'CONTROLLED_THROUGHOUT',
-                      'LOST_CONTROL_LATE', 'OVERCORRECTED_TO_CRASH'}
-    },
-    'thrust': {
-        'icon': '🔥',
-        'behaviors': {'MAIN_THRUST_HEAVY', 'MAIN_THRUST_MODERATE', 'MAIN_THRUST_LIGHT', 'MAIN_THRUST_NONE',
-                      'SIDE_THRUST_LEFT_BIAS', 'SIDE_THRUST_RIGHT_BIAS', 'SIDE_THRUST_BALANCED',
-                      'ERRATIC_THRUST', 'SMOOTH_THRUST', 'FULL_THROTTLE_BURST'}
-    },
-    'contact': {
-        'icon': '👣',
-        'behaviors': {'NO_CONTACT_MADE', 'SCRAPED_LEFT_LEG', 'SCRAPED_RIGHT_LEG', 'TOUCHED_DOWN_CLEAN',
-                      'BOUNCED', 'MULTIPLE_TOUCHDOWNS', 'PROLONGED_ONE_LEG', 'REACHED_LOW_ALTITUDE',
-                      'STAYED_HIGH', 'PEAKED_ABOVE_START', 'GROUND_APPROACH_ABORT'}
-    },
-}
+def run_periodic_diagnostics(
+    reporter: DiagnosticsReporter,
+    diagnostics: DiagnosticsTracker,
+    chart_folder: Optional[str],
+    simulation_start_timestamp: str,
+    completed_episodes: int
+) -> Optional[str]:
+    """Run periodic diagnostics and chart generation.
 
-# Outcomes that indicate a safe landing
-SAFE_LANDING_OUTCOMES = {
-    'LANDED_PERFECTLY', 'LANDED_SOFTLY', 'LANDED_TILTED', 'LANDED_HARD', 'LANDED_ONE_LEG',
-    'LANDED_SLIDING', 'TIMED_OUT_ON_GROUND'
-}
+    Args:
+        reporter: DiagnosticsReporter for printing summary
+        diagnostics: DiagnosticsTracker with collected data
+        chart_folder: Current chart folder path (may be None)
+        simulation_start_timestamp: Timestamp for folder naming
+        completed_episodes: Number of episodes completed
 
-# Short names for behaviors (for compact display)
-BEHAVIOR_SHORT_NAMES = {
-    'STAYED_CENTERED': 'CENTERED', 'DRIFTED_LEFT': 'DRIFT_L', 'DRIFTED_RIGHT': 'DRIFT_R',
-    'RETURNED_TO_CENTER': 'RETURNED', 'HORIZONTAL_OSCILLATION': 'H_OSCILLATE',
-    'STRONG_LATERAL_VELOCITY': 'STRONG_LATERAL',
-    'CONTROLLED_DESCENT': 'CTRL_DESC', 'SLOW_DESCENT': 'SLOW_DESC', 'RAPID_DESCENT': 'RAPID_DESC',
-    'HOVER_MAINTAINED': 'HOVER', 'YO_YO_PATTERN': 'YO_YO', 'CONTINUOUS_BURN': 'CONT_BURN',
-    'LATE_BRAKING': 'LATE_BRAKE', 'STALLED_THEN_FELL': 'STALLED',
-    'STAYED_UPRIGHT': 'UPRIGHT', 'SLIGHT_LEFT_LEAN': 'LEAN_L', 'SLIGHT_RIGHT_LEAN': 'LEAN_R',
-    'HEAVY_LEFT_TILT': 'TILT_L', 'HEAVY_RIGHT_TILT': 'TILT_R', 'FLIPPED_OVER': 'FLIPPED',
-    'SPINNING_UNCONTROLLED': 'SPINNING', 'RECOVERED_FROM_TILT': 'RECOVERED',
-    'PROGRESSIVE_TILT': 'PROG_TILT', 'NEVER_STABILIZED': 'UNSTABLE',
-    'CONTROLLED_THROUGHOUT': 'CONTROLLED', 'LOST_CONTROL_LATE': 'LOST_CTRL',
-    'OVERCORRECTED_TO_CRASH': 'OVERCORRECT',
-    'MAIN_THRUST_HEAVY': 'MAIN_HEAVY', 'MAIN_THRUST_MODERATE': 'MAIN_MOD',
-    'MAIN_THRUST_LIGHT': 'MAIN_LIGHT', 'MAIN_THRUST_NONE': 'MAIN_NONE',
-    'SIDE_THRUST_LEFT_BIAS': 'SIDE_L', 'SIDE_THRUST_RIGHT_BIAS': 'SIDE_R',
-    'SIDE_THRUST_BALANCED': 'SIDE_BAL', 'ERRATIC_THRUST': 'ERRATIC', 'SMOOTH_THRUST': 'SMOOTH',
-    'FULL_THROTTLE_BURST': 'FULL_THROTTLE',
-    'NO_CONTACT_MADE': 'NO_CONTACT', 'SCRAPED_LEFT_LEG': 'SCRAPE_L', 'SCRAPED_RIGHT_LEG': 'SCRAPE_R',
-    'TOUCHED_DOWN_CLEAN': 'CLEAN_TD', 'MULTIPLE_TOUCHDOWNS': 'MULTI_TD', 'PROLONGED_ONE_LEG': 'ONE_LEG',
-    'REACHED_LOW_ALTITUDE': 'LOW_ALT', 'STAYED_HIGH': 'HIGH', 'PEAKED_ABOVE_START': 'PEAKED',
-    'GROUND_APPROACH_ABORT': 'ABORTED', 'DIRECT_APPROACH': 'DIRECT', 'CURVED_APPROACH': 'CURVED',
-    'SPIRAL_DESCENT': 'SPIRAL', 'ZIGZAG_DESCENT': 'ZIGZAG', 'SUICIDE_BURN': 'SUICIDE',
-    'GRADUAL_SLOWDOWN': 'GRADUAL', 'HOVERED_OVER_GOAL_TIMEOUT': 'HOVER_EXPLOIT',
-    'HOVER_NEAR_GROUND_TIMEOUT': 'HOVER_GROUND',
-}
+    Returns:
+        Updated chart_folder path (creates folder if None)
+    """
+    # Print diagnostics summary
+    reporter.print_summary()
 
+    # Create chart folder on first periodic chart
+    if chart_folder is None:
+        chart_folder = os.path.join("chart_images", simulation_start_timestamp)
+        os.makedirs(chart_folder, exist_ok=True)
+        logger.info(f"Created chart folder: {chart_folder}")
 
-def format_behavior_output(behavior_report) -> str:
-    """Format behavior report into categorized lines with icons."""
-    lines = []
+    # Generate chart to file and open with system viewer
+    chart_path = os.path.join(chart_folder, f"chart_episode_{completed_episodes}.png")
+    chart_gen = ChartGenerator(diagnostics, batch_size=50)
+    if chart_gen.generate_to_file(chart_path):
+        os.startfile(chart_path)
 
-    # Group behaviors by category
-    categorized = {cat: [] for cat in BEHAVIOR_CATEGORIES}
-    uncategorized = []
-
-    for behavior in behavior_report.behaviors:
-        found = False
-        for cat_name, cat_info in BEHAVIOR_CATEGORIES.items():
-            if behavior in cat_info['behaviors']:
-                short_name = BEHAVIOR_SHORT_NAMES.get(behavior, behavior)
-                categorized[cat_name].append(short_name)
-                found = True
-                break
-        if not found:
-            short_name = BEHAVIOR_SHORT_NAMES.get(behavior, behavior)
-            uncategorized.append(short_name)
-
-    # Build output lines for non-empty categories
-    for cat_name in ['horizontal', 'vertical', 'orientation', 'thrust', 'contact']:
-        if categorized[cat_name]:
-            icon = BEHAVIOR_CATEGORIES[cat_name]['icon']
-            behaviors_str = ', '.join(categorized[cat_name])
-            lines.append(f"    {icon} {behaviors_str}")
-
-    if uncategorized:
-        lines.append(f"    📋 {', '.join(uncategorized)}")
-
-    return '\n'.join(lines)
+    return chart_folder
 
 
 def finalize_episode(
@@ -199,14 +135,14 @@ def finalize_episode(
         diagnostics.record_behavior(behavior_report, success)
 
     # Format the main status line
-    status_icon = '✓' if success else '✗'
+    status_icon = '[OK]' if success else '[X]'
     outcome = behavior_report.outcome if behavior_report else 'UNKNOWN'
-    rendered_tag = ' 🎬' if rendered else ''
+    rendered_tag = ' [R]' if rendered else ''
     landed_safely = outcome in SAFE_LANDING_OUTCOMES
-    landing_indicator = '✅ Landed Safely' if landed_safely else '❌ Didn\'t land safely'
+    landing_indicator = '[SAFE] Landed Safely' if landed_safely else '[FAIL] Didn\'t land safely'
 
     # Print main line
-    print(f"Run {episode_num} {status_icon} {outcome}{rendered_tag} {landing_indicator} 🥕 Reward: {total_reward:.1f} (env: {env_reward:.1f} / shaped: {shaped_bonus:+.1f})")
+    print(f"Run {episode_num} {status_icon} {outcome}{rendered_tag} {landing_indicator} | Reward: {total_reward:.1f} (env: {env_reward:.1f} / shaped: {shaped_bonus:+.1f})")
 
     # Print categorized behaviors
     if behavior_report and behavior_report.behaviors:
@@ -533,20 +469,10 @@ def main() -> None:
 
                     # Periodic diagnostics and chart generation every 100 episodes
                     if completed_episodes % 100 == 0:
-                        # Print diagnostics summary
-                        reporter.print_summary()
-
-                        # Create chart folder on first periodic chart
-                        if chart_folder is None:
-                            chart_folder = os.path.join("chart_images", simulation_start_timestamp)
-                            os.makedirs(chart_folder, exist_ok=True)
-                            logger.info(f"Created chart folder: {chart_folder}")
-
-                        # Generate chart to file and open with system viewer
-                        chart_path = os.path.join(chart_folder, f"chart_episode_{completed_episodes}.png")
-                        chart_gen = ChartGenerator(diagnostics, batch_size=50)
-                        if chart_gen.generate_to_file(chart_path):
-                            os.startfile(chart_path)
+                        chart_folder = run_periodic_diagnostics(
+                            reporter, diagnostics, chart_folder,
+                            simulation_start_timestamp, completed_episodes
+                        )
 
                     continue
 
@@ -634,20 +560,10 @@ def main() -> None:
 
                         # Periodic diagnostics and chart generation every 100 episodes
                         if completed_episodes % 100 == 0:
-                            # Print diagnostics summary
-                            reporter.print_summary()
-
-                            # Create chart folder on first periodic chart
-                            if chart_folder is None:
-                                chart_folder = os.path.join("chart_images", simulation_start_timestamp)
-                                os.makedirs(chart_folder, exist_ok=True)
-                                logger.info(f"Created chart folder: {chart_folder}")
-
-                            # Generate chart to file and open with system viewer
-                            chart_path = os.path.join(chart_folder, f"chart_episode_{completed_episodes}.png")
-                            chart_gen = ChartGenerator(diagnostics, batch_size=50)
-                            if chart_gen.generate_to_file(chart_path):
-                                os.startfile(chart_path)
+                            chart_folder = run_periodic_diagnostics(
+                                reporter, diagnostics, chart_folder,
+                                simulation_start_timestamp, completed_episodes
+                            )
 
                         if completed_episodes >= config.run.num_episodes:
                             break
