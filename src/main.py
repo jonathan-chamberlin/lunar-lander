@@ -36,6 +36,11 @@ import torch as T
 
 from config import Config, TrainingConfig, NoiseConfig, RunConfig, EnvironmentConfig, DisplayConfig
 from data_types import Experience, EpisodeResult
+from data.abstractions import SimulationIdentifier
+from data.simulation_io import SimulationDirectory
+from data.config_serializer import create_config_snapshot
+from data.run_logger import RunLogger, RunRecord
+from data.aggregate_writer import AggregateWriter
 from training.environment import (
     create_environments,
     shape_reward,
@@ -175,6 +180,24 @@ def finalize_episode(
         elapsed = time.time() - timing.start_time
         batch_num = data.episode_num // 50
         context.diagnostics.record_batch_speed(batch_num, elapsed, timing.total_steps, timing.total_training_updates)
+
+    # Log run to JSONL if run_logger is available
+    if context.run_logger is not None:
+        behaviors_list = behavior_report.behaviors if behavior_report else []
+        run_record = RunRecord.create(
+            run_number=data.episode_num,
+            env_reward=data.env_reward,
+            shaped_bonus=data.shaped_bonus,
+            steps=data.steps,
+            duration_seconds=data.duration_seconds,
+            success=success,
+            outcome=outcome,
+            behaviors=behaviors_list,
+            terminated=data.terminated,
+            truncated=data.truncated,
+            rendered=data.rendered,
+        )
+        context.run_logger.log_run(run_record)
 
     # Return result for compatibility (but it's no longer stored in diagnostics)
     result = EpisodeResult(
@@ -421,16 +444,31 @@ def main() -> None:
         total_training_updates=0
     )
 
-    # Run folder for this simulation (logs/{timestamp}/ with charts/ and text/ subfolders)
-    # Use script directory as base to ensure logs are always in lunar-lander/logs/
+    # Create simulation directory using new data architecture
+    # Use script directory as base to ensure simulations are always in lunar-lander/simulations/
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # lunar-lander/
-    simulation_start_timestamp = datetime.now().strftime("%Y-%m-%d %Hh%Mm%Ss")
-    run_folder = os.path.join(script_dir, "logs", simulation_start_timestamp)
-    charts_folder = os.path.join(run_folder, "charts")
-    text_folder = os.path.join(run_folder, "text")
-    os.makedirs(charts_folder, exist_ok=True)
-    os.makedirs(text_folder, exist_ok=True)
-    logger.info(f"Created run folder: {run_folder}")
+    sim_id = SimulationIdentifier.create()
+    sim_dir = SimulationDirectory(script_dir, sim_id)
+    sim_dir.initialize()
+
+    # Write immutable config snapshot
+    config_snapshot = create_config_snapshot(config, sim_id)
+    sim_dir.write_config(config_snapshot)
+
+    # Create run logger for per-episode JSONL logging
+    run_logger = RunLogger(sim_dir.runs_path)
+
+    # Create aggregate writer for periodic snapshots
+    aggregate_writer = AggregateWriter(sim_dir.aggregates_path, write_interval=100)
+
+    # Add run_logger to training context
+    training_context.run_logger = run_logger
+
+    # Set paths for charts and text (using new directory structure)
+    charts_folder = str(sim_dir.charts_path)
+    text_folder = str(sim_dir.text_path)
+    run_folder = str(sim_dir.root_path)
+    logger.info(f"Created simulation directory: {run_folder}")
 
     # Maintenance interval (every N episodes, perform cleanup)
     MAINTENANCE_INTERVAL = 100
@@ -527,6 +565,8 @@ def main() -> None:
                         run_periodic_diagnostics(
                             reporter, diagnostics, charts_folder, text_folder, completed_episodes, output
                         )
+                        # Write periodic aggregate snapshot
+                        aggregate_writer.maybe_write(completed_episodes, diagnostics)
 
                     continue
 
@@ -613,6 +653,8 @@ def main() -> None:
                             run_periodic_diagnostics(
                                 reporter, diagnostics, charts_folder, text_folder, completed_episodes, output
                             )
+                            # Write periodic aggregate snapshot
+                            aggregate_writer.maybe_write(completed_episodes, diagnostics)
 
                         if completed_episodes >= config.run.num_episodes:
                             break
@@ -715,6 +757,19 @@ def main() -> None:
                             print(f"Max reward: {np.max(rewards):.2f}")
                     except Exception:
                         print("Could not print even minimal diagnostics")
+
+            # Write final aggregate and save model
+            try:
+                aggregate_writer.write_final(diagnostics)
+                logger.info(f"Final aggregate saved")
+            except Exception as e:
+                logger.error(f"Failed to write final aggregate: {e}")
+
+            try:
+                model_path = str(sim_dir.models_path / "final_model")
+                trainer.save(model_path)
+            except Exception as e:
+                logger.error(f"Failed to save model: {e}")
 
             # Generate final training visualization charts
             try:

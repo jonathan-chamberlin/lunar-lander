@@ -5,13 +5,16 @@ and improve code readability.
 """
 
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, TYPE_CHECKING
 
 import numpy as np
 import pygame as pg
 
 from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from analysis.diagnostics import DiagnosticsTracker
+
+if TYPE_CHECKING:
+    from data.run_logger import RunLogger
 
 
 @dataclass
@@ -57,6 +60,7 @@ class TrainingContext:
     replay_buffer: Union[ReplayBuffer, PrioritizedReplayBuffer]
     success_threshold: float
     min_experiences: int
+    run_logger: Optional["RunLogger"] = None
 
 
 @dataclass
