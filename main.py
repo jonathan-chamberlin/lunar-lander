@@ -28,7 +28,7 @@ import pygame as pg
 import torch as T
 
 from config import Config, TrainingConfig, NoiseConfig, RunConfig, EnvironmentConfig, DisplayConfig
-from data_types import Experience, EpisodeResult, ActionStatistics
+from data_types import Experience, EpisodeResult
 from training.environment import (
     create_environments,
     shape_reward,
@@ -106,29 +106,34 @@ def finalize_episode(
 ) -> EpisodeResult:
     """Create episode result, record it, print status, and track action stats."""
     success = env_reward >= success_threshold
-    result = EpisodeResult(
+
+    # Record episode with incremental statistics (primitives only)
+    diagnostics.record_episode(
         episode_num=episode_num,
-        total_reward=total_reward,
         env_reward=env_reward,
         shaped_bonus=shaped_bonus,
-        steps=steps,
-        success=success,
-        duration_seconds=duration_seconds
+        duration_seconds=duration_seconds,
+        success=success
     )
-
-    diagnostics.record_episode(result)
 
     # Analyze behaviors first so we can include outcome in the main line
     behavior_report = None
+    outcome = 'UNKNOWN'
     if len(observations_array) > 0 and len(actions_array) > 0:
         behavior_report = behavior_analyzer.analyze(
             observations_array, actions_array, terminated, truncated
         )
-        diagnostics.record_behavior(behavior_report, success)
+        outcome = behavior_report.outcome
+        # Record behavior with incremental statistics (primitives only)
+        diagnostics.record_behavior(
+            outcome=outcome,
+            behaviors=behavior_report.behaviors,
+            env_reward=env_reward,
+            success=success
+        )
 
     # Format the main status line
     status_icon = '✓' if success else '✗'
-    outcome = behavior_report.outcome if behavior_report else 'UNKNOWN'
     rendered_tag = ' 🎬' if rendered else ''
     landed_safely = outcome in SAFE_LANDING_OUTCOMES
     landing_indicator = '✅ Landed Safely' if landed_safely else '❌ Didn\'t land safely'
@@ -146,9 +151,18 @@ def finalize_episode(
         batch_num = episode_num // 50
         diagnostics.record_batch_speed(batch_num, elapsed, total_steps, total_training_updates)
 
-    if len(actions_array) > 0 and replay_buffer.is_ready(min_experiences):
-        diagnostics.record_action_stats(ActionStatistics.from_actions(actions_array))
+    # Note: action_stats recording removed for memory efficiency
 
+    # Return result for compatibility (but it's no longer stored in diagnostics)
+    result = EpisodeResult(
+        episode_num=episode_num,
+        total_reward=total_reward,
+        env_reward=env_reward,
+        shaped_bonus=shaped_bonus,
+        steps=steps,
+        success=success,
+        duration_seconds=duration_seconds
+    )
     return result
 
 def run_rendered_episode(
@@ -398,8 +412,11 @@ def main() -> None:
                 if completed_episodes > 0 and completed_episodes % MAINTENANCE_INTERVAL == 0:
                     # Pump pygame events to prevent "Out of memory" errors
                     pg.event.pump()
-                    # Force garbage collection
+                    # Force garbage collection and log stats
+                    gc_counts_before = gc.get_count()
                     gc.collect()
+                    gc_counts_after = gc.get_count()
+                    logger.debug(f"GC at episode {completed_episodes}: before={gc_counts_before}, after={gc_counts_after}")
                     # Clear PyTorch cache if using CUDA
                     if T.cuda.is_available():
                         T.cuda.empty_cache()
@@ -642,10 +659,10 @@ def main() -> None:
                 # Try minimal diagnostics
                 try:
                     print("\n--- MINIMAL DIAGNOSTICS (full report failed) ---")
-                    print(f"Total episodes: {completed_episodes}")
-                    print(f"Successes: {len(diagnostics.successes)}")
-                    if diagnostics.episode_results:
-                        rewards = [r.total_reward for r in diagnostics.episode_results]
+                    print(f"Total episodes: {diagnostics.total_episodes}")
+                    print(f"Successes: {diagnostics.success_count}")
+                    if diagnostics.env_rewards:
+                        rewards = diagnostics.get_rewards()
                         print(f"Mean reward: {np.mean(rewards):.2f}")
                         print(f"Max reward: {np.max(rewards):.2f}")
                 except Exception:

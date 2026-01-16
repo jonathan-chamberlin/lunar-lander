@@ -1,22 +1,25 @@
-"""Diagnostics tracking and reporting for TD3 training."""
+"""Diagnostics tracking and reporting for TD3 training.
+
+Uses incremental statistics to avoid O(n) recomputation and unbounded memory growth.
+All per-episode data is stored as primitive types (floats/ints/strings) rather than objects.
+"""
 
 import json
 import logging
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Set
 
 import numpy as np
 
 from data_types import (
-    EpisodeResult,
-    ActionStatistics,
-    TrainingMetrics,
     AggregatedTrainingMetrics
 )
-from analysis.behavior_analysis import BehaviorReport
-from constants import OUTCOME_CATEGORIES, QUALITY_BEHAVIORS
+from constants import (
+    OUTCOME_CATEGORIES, QUALITY_BEHAVIORS, OUTCOME_TO_CATEGORY,
+    OUTCOME_CATEGORY_ORDER, REPORT_CARD_BEHAVIORS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,59 +107,283 @@ class BatchSpeedMetrics:
 
 
 class DiagnosticsTracker:
-    """Collects and stores training metrics without performing I/O.
+    """Collects training metrics using incremental statistics.
 
-    This class is responsible for accumulating metrics during training.
-    Use DiagnosticsReporter for outputting the collected data.
+    Uses lightweight primitive lists instead of object storage to prevent
+    unbounded memory growth. Statistics are computed incrementally as
+    episodes complete, avoiding O(n) recomputation.
+
+    Memory efficient: ~78 bytes/episode vs ~368 bytes/episode with objects.
     """
 
-    def __init__(self) -> None:
-        # Episode results
-        self.episode_results: List[EpisodeResult] = []
-        self.successes: List[int] = []
+    def __init__(self, batch_size: int = 50) -> None:
+        self.batch_size = batch_size
 
-        # Action statistics per episode
-        self.action_stats: List[ActionStatistics] = []
+        # =====================================================================
+        # Per-episode primitive lists (for charting)
+        # =====================================================================
+        self.env_rewards: List[float] = []
+        self.shaped_bonuses: List[float] = []
+        self.durations: List[float] = []
+        self.successes_bool: List[bool] = []
+        self.outcomes: List[str] = []
+        self.streak_history: List[int] = []
+        self.landed_env_rewards: List[float] = []  # Only for landed episodes
 
-        # Behavior reports per episode
-        self.behavior_reports: List[BehaviorReport] = []
+        # =====================================================================
+        # Running statistics (incremental, no recomputation)
+        # =====================================================================
+        self.total_episodes: int = 0
+        self.success_count: int = 0
+        self.current_streak: int = 0
+        self.max_streak: int = 0
+        self.max_streak_episode: int = 0
+        self.first_success_episode: Optional[int] = None
 
+        # Global outcome and behavior counters
+        self.outcome_counts: Counter = Counter()
+        self.behavior_counts: Counter = Counter()
+
+        # Running sums for mean calculations
+        self._reward_sum: float = 0.0
+        self._env_reward_sum: float = 0.0
+        self._duration_sum: float = 0.0
+        self._min_reward: float = float('inf')
+        self._max_reward: float = float('-inf')
+        self._min_env_reward: float = float('inf')
+        self._max_env_reward: float = float('-inf')
+
+        # Quality behavior tracking
+        self._good_behavior_count: int = 0
+        self._bad_behavior_count: int = 0
+        self._contact_count: int = 0
+        self._low_altitude_count: int = 0
+        self._clean_touchdown_count: int = 0
+
+        # =====================================================================
+        # Per-batch counters (reset every batch_size episodes)
+        # =====================================================================
+        self._current_batch_episode_count: int = 0
+        self._current_batch_success_count: int = 0
+        self._current_batch_outcome_counts: Counter = Counter()
+        self._current_batch_behavior_counts: Counter = Counter()
+
+        # =====================================================================
+        # Completed batch statistics (primitive lists)
+        # =====================================================================
+        self.batch_success_rates: List[float] = []
+        self.batch_outcome_distributions: List[Dict[str, float]] = []
+        self.batch_behavior_frequencies: List[Dict[str, float]] = []
+
+        # =====================================================================
+        # Report card: first 100 + rolling last 100
+        # =====================================================================
+        self._first_100_behavior_counts: Counter = Counter()
+        self._first_100_outcome_counts: Counter = Counter()
+        self._first_100_frozen: bool = False
+        self._last_100_behaviors: deque = deque(maxlen=100)  # Each entry is Set[str]
+        self._last_100_successes: deque = deque(maxlen=100)  # Each entry is bool
+
+        # =====================================================================
+        # Success correlation tracking
+        # =====================================================================
+        self._success_behavior_counts: Counter = Counter()
+        self._failure_behavior_counts: Counter = Counter()
+
+        # =====================================================================
         # Training metrics (recorded periodically, not every episode)
+        # =====================================================================
         self.q_values: List[float] = []
         self.actor_losses: List[float] = []
         self.critic_losses: List[float] = []
         self.actor_grad_norms: List[float] = []
         self.critic_grad_norms: List[float] = []
 
-        # Speed metrics per batch (recorded every 50 episodes)
+        # =====================================================================
+        # Speed metrics per batch
+        # =====================================================================
         self.batch_speed_metrics: List[BatchSpeedMetrics] = []
 
-    def record_episode(self, result: EpisodeResult) -> None:
-        """Record a completed episode result.
+        # Pre-compute behavior sets for fast lookup
+        self._good_behaviors_set: Set[str] = set(QUALITY_BEHAVIORS['good'])
+        self._bad_behaviors_set: Set[str] = set(QUALITY_BEHAVIORS['bad'])
+        self._contact_behaviors_set: Set[str] = {
+            'TOUCHED_DOWN_CLEAN', 'SCRAPED_LEFT_LEG', 'SCRAPED_RIGHT_LEG',
+            'BOUNCED', 'PROLONGED_ONE_LEG', 'MULTIPLE_TOUCHDOWNS'
+        }
+        self._landed_outcomes_set: Set[str] = {
+            'LANDED_PERFECTLY', 'LANDED_SOFTLY', 'LANDED_HARD',
+            'LANDED_TILTED', 'LANDED_ONE_LEG', 'LANDED_SLIDING'
+        }
+
+    def record_episode(
+        self,
+        episode_num: int,
+        env_reward: float,
+        shaped_bonus: float,
+        duration_seconds: float,
+        success: bool
+    ) -> None:
+        """Record episode metrics incrementally.
 
         Args:
-            result: The episode result to record
+            episode_num: Episode number
+            env_reward: Raw environment reward
+            shaped_bonus: Reward shaping bonus
+            duration_seconds: Episode duration
+            success: Whether episode was successful (env_reward >= 200)
         """
-        self.episode_results.append(result)
-        if result.success:
-            self.successes.append(result.episode_num)
+        total_reward = env_reward + shaped_bonus
 
-    def record_action_stats(self, stats: ActionStatistics) -> None:
-        """Record action statistics for an episode.
+        # Append primitives for charts
+        self.env_rewards.append(env_reward)
+        self.shaped_bonuses.append(shaped_bonus)
+        self.durations.append(duration_seconds)
+        self.successes_bool.append(success)
+
+        # Update running statistics
+        self.total_episodes += 1
+        self._reward_sum += total_reward
+        self._env_reward_sum += env_reward
+        self._duration_sum += duration_seconds
+        self._min_reward = min(self._min_reward, total_reward)
+        self._max_reward = max(self._max_reward, total_reward)
+        self._min_env_reward = min(self._min_env_reward, env_reward)
+        self._max_env_reward = max(self._max_env_reward, env_reward)
+
+        # Update success tracking
+        if success:
+            self.success_count += 1
+            self.current_streak += 1
+            if self.current_streak > self.max_streak:
+                self.max_streak = self.current_streak
+                self.max_streak_episode = episode_num
+            if self.first_success_episode is None:
+                self.first_success_episode = episode_num
+        else:
+            self.current_streak = 0
+
+        self.streak_history.append(self.current_streak)
+
+        # Update batch success counter
+        self._current_batch_episode_count += 1
+        if success:
+            self._current_batch_success_count += 1
+
+        # Update rolling last 100 successes
+        self._last_100_successes.append(success)
+
+    def record_behavior(
+        self,
+        outcome: str,
+        behaviors: List[str],
+        env_reward: float,
+        success: bool
+    ) -> None:
+        """Record behavior data incrementally.
 
         Args:
-            stats: Action statistics computed from episode actions
+            outcome: Episode outcome string (e.g., 'LANDED_PERFECTLY')
+            behaviors: List of behavior strings detected in the episode
+            env_reward: Environment reward (for landed histogram)
+            success: Whether episode was successful
         """
-        self.action_stats.append(stats)
+        self.outcomes.append(outcome)
 
-    def record_behavior(self, report: BehaviorReport, success: bool) -> None:
-        """Record behavior report for an episode.
+        # Update outcome counters
+        self.outcome_counts[outcome] += 1
+        self._current_batch_outcome_counts[outcome] += 1
 
-        Args:
-            report: Behavior report from behavior analysis
-            success: Whether the episode was successful
-        """
-        self.behavior_reports.append(report)
+        # Update behavior counters and check quality
+        behavior_set = set(behaviors)
+        has_good = False
+        has_bad = False
+        has_contact = False
+        has_low_alt = 'REACHED_LOW_ALTITUDE' in behavior_set
+
+        for behavior in behaviors:
+            self.behavior_counts[behavior] += 1
+            self._current_batch_behavior_counts[behavior] += 1
+
+            if behavior in self._good_behaviors_set:
+                has_good = True
+            if behavior in self._bad_behaviors_set:
+                has_bad = True
+            if behavior in self._contact_behaviors_set:
+                has_contact = True
+            if behavior == 'TOUCHED_DOWN_CLEAN':
+                self._clean_touchdown_count += 1
+
+        if has_good:
+            self._good_behavior_count += 1
+        if has_bad:
+            self._bad_behavior_count += 1
+        if has_contact:
+            self._contact_count += 1
+        if has_low_alt:
+            self._low_altitude_count += 1
+
+        # First 100 episodes tracking
+        if not self._first_100_frozen:
+            for behavior in behavior_set:
+                self._first_100_behavior_counts[behavior] += 1
+            self._first_100_outcome_counts[outcome] += 1
+            if self.total_episodes >= 100:
+                self._first_100_frozen = True
+
+        # Rolling last 100 behaviors (for report card)
+        self._last_100_behaviors.append(behavior_set)
+
+        # Success correlation
+        if success:
+            for behavior in behavior_set:
+                self._success_behavior_counts[behavior] += 1
+        else:
+            for behavior in behavior_set:
+                self._failure_behavior_counts[behavior] += 1
+
+        # Store landed rewards for histogram
+        if outcome in self._landed_outcomes_set:
+            self.landed_env_rewards.append(env_reward)
+
+        # Check if batch complete
+        if self._current_batch_episode_count >= self.batch_size:
+            self._finalize_batch()
+
+    def _finalize_batch(self) -> None:
+        """Finalize current batch statistics and reset counters."""
+        batch_len = self._current_batch_episode_count
+        if batch_len == 0:
+            return
+
+        # Compute and store batch success rate
+        success_rate = (self._current_batch_success_count / batch_len) * 100
+        self.batch_success_rates.append(success_rate)
+
+        # Compute and store outcome distribution
+        outcome_dist = {}
+        for category in OUTCOME_CATEGORY_ORDER:
+            category_outcomes = OUTCOME_CATEGORIES.get(category, [])
+            count = sum(self._current_batch_outcome_counts.get(o, 0) for o in category_outcomes)
+            # Also check OUTCOME_TO_CATEGORY for outcomes not in OUTCOME_CATEGORIES
+            for outcome, cat in OUTCOME_TO_CATEGORY.items():
+                if cat == category and outcome not in category_outcomes:
+                    count += self._current_batch_outcome_counts.get(outcome, 0)
+            outcome_dist[category] = (count / batch_len) * 100
+        self.batch_outcome_distributions.append(outcome_dist)
+
+        # Compute and store behavior frequencies for heatmap
+        behavior_freqs = {}
+        for behavior in REPORT_CARD_BEHAVIORS:
+            count = self._current_batch_behavior_counts.get(behavior, 0)
+            behavior_freqs[behavior] = (count / batch_len) * 100
+        self.batch_behavior_frequencies.append(behavior_freqs)
+
+        # Reset batch counters
+        self._current_batch_episode_count = 0
+        self._current_batch_success_count = 0
+        self._current_batch_outcome_counts.clear()
+        self._current_batch_behavior_counts.clear()
 
     def record_training_metrics(self, metrics: AggregatedTrainingMetrics) -> None:
         """Record aggregated training metrics.
@@ -197,18 +424,105 @@ class DiagnosticsTracker:
             ups=ups
         ))
 
+    # =========================================================================
+    # Getter Methods for Charts (return primitive data)
+    # =========================================================================
+
     def get_rewards(self) -> List[float]:
         """Get list of total rewards for all episodes."""
-        return [r.total_reward for r in self.episode_results]
+        return [e + s for e, s in zip(self.env_rewards, self.shaped_bonuses)]
+
+    def get_reward_data(self) -> Tuple[List[float], List[float]]:
+        """Get reward data for charts.
+
+        Returns:
+            Tuple of (env_rewards, shaped_bonuses) lists
+        """
+        return self.env_rewards, self.shaped_bonuses
+
+    def get_success_data(self) -> Tuple[List[float], List[bool]]:
+        """Get success rate data for charts.
+
+        Returns:
+            Tuple of (batch_success_rates, successes_bool) lists
+        """
+        return self.batch_success_rates, self.successes_bool
+
+    def get_outcome_distribution_per_batch(self) -> List[Dict[str, float]]:
+        """Get pre-computed outcome distributions per batch.
+
+        Returns:
+            List of dicts mapping category -> percentage for each batch
+        """
+        return self.batch_outcome_distributions
+
+    def get_behavior_frequencies_per_batch(self) -> List[Dict[str, float]]:
+        """Get pre-computed behavior frequencies per batch for heatmap.
+
+        Returns:
+            List of dicts mapping behavior -> frequency% for each batch
+        """
+        return self.batch_behavior_frequencies
+
+    def get_streak_data(self) -> Tuple[List[int], int, int]:
+        """Get streak data for charts.
+
+        Returns:
+            Tuple of (streak_history, max_streak, max_streak_episode)
+        """
+        return self.streak_history, self.max_streak, self.max_streak_episode
+
+    def get_duration_data(self) -> List[float]:
+        """Get episode durations for charts.
+
+        Returns:
+            List of episode durations in seconds
+        """
+        return self.durations
+
+    def get_report_card_data(self) -> Tuple[Dict[str, float], Dict[str, float]]:
+        """Get first 100 vs last 100 behavior frequencies for report card.
+
+        Returns:
+            Tuple of (first_100_freqs, last_100_freqs) dicts
+        """
+        # First 100 frequencies
+        first_100_count = min(100, self.total_episodes)
+        first_100_freqs = {}
+        for behavior in REPORT_CARD_BEHAVIORS:
+            count = self._first_100_behavior_counts.get(behavior, 0)
+            first_100_freqs[behavior] = (count / first_100_count * 100) if first_100_count > 0 else 0.0
+
+        # Last 100 frequencies from rolling buffer
+        last_100_count = len(self._last_100_behaviors)
+        last_100_freqs = {}
+        if last_100_count > 0:
+            behavior_counts: Counter = Counter()
+            for behavior_set in self._last_100_behaviors:
+                behavior_counts.update(behavior_set)
+            for behavior in REPORT_CARD_BEHAVIORS:
+                last_100_freqs[behavior] = (behavior_counts.get(behavior, 0) / last_100_count) * 100
+        else:
+            for behavior in REPORT_CARD_BEHAVIORS:
+                last_100_freqs[behavior] = 0.0
+
+        return first_100_freqs, last_100_freqs
+
+    def get_landing_histogram_data(self) -> List[float]:
+        """Get env_rewards for landed episodes for histogram.
+
+        Returns:
+            List of env_rewards for episodes that landed
+        """
+        return self.landed_env_rewards
 
     def get_summary(self) -> DiagnosticsSummary:
-        """Compute summary statistics from all tracked metrics.
+        """Compute summary statistics from incremental metrics.
 
         Returns:
             DiagnosticsSummary with computed statistics
         """
-        rewards = self.get_rewards()
-        num_episodes = len(rewards)
+        num_episodes = self.total_episodes
 
         if num_episodes == 0:
             return DiagnosticsSummary(
@@ -222,26 +536,13 @@ class DiagnosticsTracker:
                 mean_critic_grad_norm=None
             )
 
-        # Episode statistics
-        final_50_mean = (
-            float(np.mean(rewards[-50:]))
-            if num_episodes >= 50 else None
-        )
-
-        # Action statistics
-        mean_main = None
-        mean_side = None
-        mean_magnitude = None
-        high_thruster_ratio = None
-
-        if self.action_stats:
-            mean_main = float(np.mean([s.mean_main_thruster for s in self.action_stats]))
-            mean_side = float(np.mean([s.mean_side_thruster for s in self.action_stats]))
-            mean_magnitude = float(np.mean([s.mean_magnitude for s in self.action_stats]))
-            high_thruster_count = sum(
-                1 for s in self.action_stats if s.mean_main_thruster > 0.5
-            )
-            high_thruster_ratio = high_thruster_count / len(self.action_stats)
+        # Episode statistics from running sums
+        mean_reward = self._reward_sum / num_episodes
+        final_50_mean = None
+        if num_episodes >= 50:
+            # Compute from primitive lists (last 50 only)
+            recent_rewards = [e + s for e, s in zip(self.env_rewards[-50:], self.shaped_bonuses[-50:])]
+            final_50_mean = float(np.mean(recent_rewards))
 
         # Training statistics
         mean_q = None
@@ -265,16 +566,16 @@ class DiagnosticsTracker:
 
         return DiagnosticsSummary(
             total_episodes=num_episodes,
-            num_successes=len(self.successes),
-            success_rate=len(self.successes) / num_episodes,
-            mean_reward=float(np.mean(rewards)),
-            max_reward=float(np.max(rewards)),
-            min_reward=float(np.min(rewards)),
+            num_successes=self.success_count,
+            success_rate=self.success_count / num_episodes,
+            mean_reward=mean_reward,
+            max_reward=self._max_reward if self._max_reward != float('-inf') else 0.0,
+            min_reward=self._min_reward if self._min_reward != float('inf') else 0.0,
             final_50_mean_reward=final_50_mean,
-            mean_main_thruster=mean_main,
-            mean_side_thruster=mean_side,
-            mean_action_magnitude=mean_magnitude,
-            high_thruster_episode_ratio=high_thruster_ratio,
+            mean_main_thruster=None,  # Action stats removed for memory efficiency
+            mean_side_thruster=None,
+            mean_action_magnitude=None,
+            high_thruster_episode_ratio=None,
             mean_q_value=mean_q,
             q_value_trend=q_trend,
             mean_actor_loss=mean_actor_loss,
@@ -284,143 +585,43 @@ class DiagnosticsTracker:
         )
 
     def get_behavior_statistics(self, batch_size: int = 50) -> Optional[BehaviorStatistics]:
-        """Compute comprehensive behavior statistics.
+        """Get behavior statistics from incremental counters.
 
         Args:
-            batch_size: Size of batches for trend analysis
+            batch_size: Size of batches (ignored, uses instance batch_size)
 
         Returns:
-            BehaviorStatistics if behavior data exists, None otherwise
+            BehaviorStatistics from incremental data, None if no data
         """
-        if not self.behavior_reports:
+        if self.total_episodes == 0:
             return None
 
-        num_episodes = len(self.behavior_reports)
-        num_batches = (num_episodes + batch_size - 1) // batch_size
+        num_episodes = self.total_episodes
 
-        # Pre-compute sets for fast lookup
-        good_behaviors_set = set(QUALITY_BEHAVIORS['good'])
-        bad_behaviors_set = set(QUALITY_BEHAVIORS['bad'])
-        contact_behaviors_set = {'TOUCHED_DOWN_CLEAN', 'SCRAPED_LEFT_LEG', 'SCRAPED_RIGHT_LEG',
-                                 'BOUNCED', 'PROLONGED_ONE_LEG', 'MULTIPLE_TOUCHDOWNS'}
+        # Outcome category counts from OUTCOME_TO_CATEGORY
+        outcome_category_counts: Dict[str, int] = {cat: 0 for cat in OUTCOME_CATEGORY_ORDER}
+        for outcome, count in self.outcome_counts.items():
+            category = OUTCOME_TO_CATEGORY.get(outcome, 'crashed')
+            outcome_category_counts[category] += count
 
-        # Build outcome-to-category lookup for O(1) access
-        outcome_to_category = {}
-        for category, outcomes in OUTCOME_CATEGORIES.items():
-            for outcome in outcomes:
-                outcome_to_category[outcome] = category
-
-        # Initialize counters and accumulators
-        outcome_counts: Counter = Counter()
-        outcome_category_counts: Dict[str, int] = {cat: 0 for cat in OUTCOME_CATEGORIES}
-        behavior_counts: Counter = Counter()
-        good_count = 0
-        bad_count = 0
-        contact_count = 0
-        success_behaviors: Counter = Counter()
-        failure_behaviors: Counter = Counter()
-        success_count = 0
-        failure_count = 0
-
-        # Initialize batch arrays
-        batch_success_counts = [0] * num_batches
-        batch_sizes = [0] * num_batches
-        batch_outcome_counts = [{cat: 0 for cat in OUTCOME_CATEGORIES} for _ in range(num_batches)]
-        batch_low_alt_counts = [0] * num_batches
-        batch_contact_counts = [0] * num_batches
-
-        # SINGLE PASS through all data
-        for i, report in enumerate(self.behavior_reports):
-            batch_idx = i // batch_size
-            batch_sizes[batch_idx] += 1
-
-            # Count outcome
-            outcome_counts[report.outcome] += 1
-            category = outcome_to_category.get(report.outcome)
-            if category:
-                outcome_category_counts[category] += 1
-                batch_outcome_counts[batch_idx][category] += 1
-
-            # Count behaviors and check quality
-            behaviors_set = set(report.behaviors)
-            has_good = False
-            has_bad = False
-            has_contact = False
-            has_low_alt = 'REACHED_LOW_ALTITUDE' in behaviors_set
-
-            for behavior in report.behaviors:
-                behavior_counts[behavior] += 1
-                if behavior in good_behaviors_set:
-                    has_good = True
-                if behavior in bad_behaviors_set:
-                    has_bad = True
-                if behavior in contact_behaviors_set:
-                    has_contact = True
-
-            if has_good:
-                good_count += 1
-            if has_bad:
-                bad_count += 1
-            if has_contact:
-                contact_count += 1
-                batch_contact_counts[batch_idx] += 1
-            if has_low_alt:
-                batch_low_alt_counts[batch_idx] += 1
-
-            # Success correlation
-            if i < len(self.episode_results):
-                is_success = self.episode_results[i].success
-                if is_success:
-                    success_count += 1
-                    batch_success_counts[batch_idx] += 1
-                    for behavior in report.behaviors:
-                        success_behaviors[behavior] += 1
-                else:
-                    failure_count += 1
-                    for behavior in report.behaviors:
-                        failure_behaviors[behavior] += 1
-
-        # Top behaviors
+        # Top behaviors from incremental counter
         top_behaviors = [
             (behavior, count, count / num_episodes * 100)
-            for behavior, count in behavior_counts.most_common(15)
+            for behavior, count in self.behavior_counts.most_common(15)
         ]
 
-        # Flight quality rates from behavior_counts
-        low_altitude_count = behavior_counts.get('REACHED_LOW_ALTITUDE', 0)
-        clean_touchdown_count = behavior_counts.get('TOUCHED_DOWN_CLEAN', 0)
-        stayed_upright_count = behavior_counts.get('STAYED_UPRIGHT', 0)
-        stayed_centered_count = behavior_counts.get('STAYED_CENTERED', 0)
-        controlled_descent_count = behavior_counts.get('CONTROLLED_DESCENT', 0)
-        controlled_throughout_count = behavior_counts.get('CONTROLLED_THROUGHOUT', 0)
-        never_stabilized_count = behavior_counts.get('NEVER_STABILIZED', 0)
-
-        # Compute batch statistics from accumulated counts
-        batch_success_rates: List[float] = []
-        batch_outcome_distributions: List[Dict[str, float]] = []
-        batch_low_altitude_rates: List[float] = []
-        batch_contact_rates: List[float] = []
-
-        for batch_idx in range(num_batches):
-            batch_len = batch_sizes[batch_idx]
-            if batch_len == 0:
-                continue
-
-            batch_success_rates.append(batch_success_counts[batch_idx] / batch_len * 100)
-            batch_outcome_distributions.append({
-                cat: batch_outcome_counts[batch_idx][cat] / batch_len * 100
-                for cat in OUTCOME_CATEGORIES
-            })
-            batch_low_altitude_rates.append(batch_low_alt_counts[batch_idx] / batch_len * 100)
-            batch_contact_rates.append(batch_contact_counts[batch_idx] / batch_len * 100)
-
         # Crash type distribution
-        crash_outcomes = OUTCOME_CATEGORIES['crashed']
-        total_crashes = sum(outcome_counts.get(o, 0) for o in crash_outcomes)
+        crash_outcomes = OUTCOME_CATEGORIES.get('crashed', [])
+        total_crashes = sum(self.outcome_counts.get(o, 0) for o in crash_outcomes)
+        # Also include outcomes mapped to 'crashed' via OUTCOME_TO_CATEGORY
+        for outcome, cat in OUTCOME_TO_CATEGORY.items():
+            if cat == 'crashed' and outcome not in crash_outcomes:
+                total_crashes += self.outcome_counts.get(outcome, 0)
+
         crash_type_distribution = {}
         if total_crashes > 0:
             for crash_type in crash_outcomes:
-                crash_type_distribution[crash_type] = outcome_counts.get(crash_type, 0) / total_crashes * 100
+                crash_type_distribution[crash_type] = self.outcome_counts.get(crash_type, 0) / total_crashes * 100
 
         # Success correlation rates
         key_behaviors = ['STAYED_UPRIGHT', 'STAYED_CENTERED', 'CONTROLLED_DESCENT',
@@ -430,122 +631,70 @@ class DiagnosticsTracker:
 
         success_behavior_rates = {}
         failure_behavior_rates = {}
+        failure_count = num_episodes - self.success_count
         for behavior in key_behaviors:
             success_behavior_rates[behavior] = (
-                success_behaviors.get(behavior, 0) / success_count * 100 if success_count > 0 else 0.0
+                self._success_behavior_counts.get(behavior, 0) / self.success_count * 100
+                if self.success_count > 0 else 0.0
             )
             failure_behavior_rates[behavior] = (
-                failure_behaviors.get(behavior, 0) / failure_count * 100 if failure_count > 0 else 0.0
+                self._failure_behavior_counts.get(behavior, 0) / failure_count * 100
+                if failure_count > 0 else 0.0
             )
 
         return BehaviorStatistics(
             total_episodes=num_episodes,
-            outcome_counts=dict(outcome_counts),
+            outcome_counts=dict(self.outcome_counts),
             outcome_category_counts=outcome_category_counts,
-            behavior_counts=dict(behavior_counts),
+            behavior_counts=dict(self.behavior_counts),
             top_behaviors=top_behaviors,
-            good_behavior_rate=good_count / num_episodes * 100,
-            bad_behavior_rate=bad_count / num_episodes * 100,
-            low_altitude_rate=low_altitude_count / num_episodes * 100,
-            contact_rate=contact_count / num_episodes * 100,
-            clean_touchdown_rate=clean_touchdown_count / num_episodes * 100,
-            stayed_upright_rate=stayed_upright_count / num_episodes * 100,
-            stayed_centered_rate=stayed_centered_count / num_episodes * 100,
-            controlled_descent_rate=controlled_descent_count / num_episodes * 100,
-            controlled_throughout_rate=controlled_throughout_count / num_episodes * 100,
-            never_stabilized_rate=never_stabilized_count / num_episodes * 100,
-            batch_success_rates=batch_success_rates,
-            batch_outcome_distributions=batch_outcome_distributions,
-            batch_low_altitude_rates=batch_low_altitude_rates,
-            batch_contact_rates=batch_contact_rates,
+            good_behavior_rate=self._good_behavior_count / num_episodes * 100,
+            bad_behavior_rate=self._bad_behavior_count / num_episodes * 100,
+            low_altitude_rate=self._low_altitude_count / num_episodes * 100,
+            contact_rate=self._contact_count / num_episodes * 100,
+            clean_touchdown_rate=self._clean_touchdown_count / num_episodes * 100,
+            stayed_upright_rate=self.behavior_counts.get('STAYED_UPRIGHT', 0) / num_episodes * 100,
+            stayed_centered_rate=self.behavior_counts.get('STAYED_CENTERED', 0) / num_episodes * 100,
+            controlled_descent_rate=self.behavior_counts.get('CONTROLLED_DESCENT', 0) / num_episodes * 100,
+            controlled_throughout_rate=self.behavior_counts.get('CONTROLLED_THROUGHOUT', 0) / num_episodes * 100,
+            never_stabilized_rate=self.behavior_counts.get('NEVER_STABILIZED', 0) / num_episodes * 100,
+            batch_success_rates=self.batch_success_rates,
+            batch_outcome_distributions=self.batch_outcome_distributions,
+            batch_low_altitude_rates=[],  # Not tracked incrementally
+            batch_contact_rates=[],  # Not tracked incrementally
             crash_type_distribution=crash_type_distribution,
             success_behavior_rates=success_behavior_rates,
             failure_behavior_rates=failure_behavior_rates,
         )
 
     def get_streak_statistics(self) -> Dict[str, Any]:
-        """Compute consecutive success streak statistics.
+        """Get streak statistics from incremental tracking.
 
         Returns:
-            Dictionary with streak data including max streak, current streak,
-            streak history, and streak break analysis.
+            Dictionary with streak data (no streak_breaks - would require object storage)
         """
-        if not self.episode_results:
-            return {
-                'max_streak': 0,
-                'max_streak_episode': 0,
-                'current_streak': 0,
-                'streaks': [],
-                'streak_breaks': []
-            }
-
-        streaks = []
-        current_streak = 0
-        max_streak = 0
-        max_streak_episode = 0
-
-        # Track when streaks of 5+ break
-        streak_breaks = []  # List of (episode_num, streak_length, outcome, env_reward)
-
-        for i, result in enumerate(self.episode_results):
-            if result.success:
-                current_streak += 1
-                if current_streak > max_streak:
-                    max_streak = current_streak
-                    max_streak_episode = result.episode_num
-            else:
-                # Streak broken - record if it was a significant streak (5+)
-                if current_streak >= 5:
-                    outcome = self.behavior_reports[i].outcome if i < len(self.behavior_reports) else 'UNKNOWN'
-                    streak_breaks.append({
-                        'episode': result.episode_num,
-                        'streak_length': current_streak,
-                        'outcome': outcome,
-                        'env_reward': result.env_reward
-                    })
-                current_streak = 0
-            streaks.append(current_streak)
-
         return {
-            'max_streak': max_streak,
-            'max_streak_episode': max_streak_episode,
-            'current_streak': current_streak,
-            'streaks': streaks,
-            'streak_breaks': streak_breaks
+            'max_streak': self.max_streak,
+            'max_streak_episode': self.max_streak_episode,
+            'current_streak': self.current_streak,
+            'streaks': self.streak_history,
+            'streak_breaks': []  # Not tracked to avoid object storage
         }
 
     def get_env_reward_distribution(self) -> Dict[str, Any]:
-        """Get env_reward distribution for different outcomes.
+        """Get env_reward distribution from incremental data.
 
         Returns:
-            Dictionary with env_reward statistics for landed vs other outcomes.
+            Dictionary with env_reward statistics for landed episodes.
         """
-        if not self.episode_results or not self.behavior_reports:
+        if not self.landed_env_rewards:
             return {}
 
-        landed_outcomes = {'LANDED_PERFECTLY', 'LANDED_SOFTLY', 'LANDED_HARD',
-                          'LANDED_TILTED', 'LANDED_ONE_LEG', 'LANDED_SLIDING'}
+        landed_rewards = self.landed_env_rewards
+        landed_arr = np.array(landed_rewards)
 
-        landed_rewards = []
-        crashed_rewards = []
-        other_rewards = []
-
-        for i, result in enumerate(self.episode_results):
-            if i >= len(self.behavior_reports):
-                break
-            outcome = self.behavior_reports[i].outcome
-
-            if outcome in landed_outcomes:
-                landed_rewards.append(result.env_reward)
-            elif 'CRASHED' in outcome:
-                crashed_rewards.append(result.env_reward)
-            else:
-                other_rewards.append(result.env_reward)
-
-        stats = {}
-        if landed_rewards:
-            landed_arr = np.array(landed_rewards)
-            stats['landed'] = {
+        stats = {
+            'landed': {
                 'count': len(landed_rewards),
                 'mean': float(np.mean(landed_arr)),
                 'std': float(np.std(landed_arr)),
@@ -558,126 +707,103 @@ class DiagnosticsTracker:
                 'below_150': sum(1 for r in landed_rewards if r < 150),
                 'rewards': landed_rewards  # For histogram
             }
-        if crashed_rewards:
-            stats['crashed'] = {
-                'count': len(crashed_rewards),
-                'mean': float(np.mean(crashed_rewards)),
-                'min': float(np.min(crashed_rewards)),
-                'max': float(np.max(crashed_rewards)),
-            }
+        }
 
         return stats
 
     def get_advanced_statistics(self) -> Dict[str, Any]:
-        """Compute advanced statistics for deeper training analysis.
+        """Get advanced statistics from incremental data.
 
         Returns:
-            Dictionary with env_reward stats, rolling rates, near-misses, etc.
+            Dictionary with env_reward stats, rolling rates, etc.
         """
-        if not self.episode_results:
+        n = self.total_episodes
+        if n == 0:
             return {}
-
-        results = self.episode_results
-        env_rewards = [r.env_reward for r in results]
-        n = len(results)
 
         stats = {}
 
-        # 1. Env reward statistics (separate from total reward)
-        stats['env_reward'] = {
-            'mean': float(np.mean(env_rewards)),
-            'std': float(np.std(env_rewards)),
-            'max': float(np.max(env_rewards)),
-            'min': float(np.min(env_rewards)),
-        }
+        # 1. Env reward statistics from running stats
+        if self.env_rewards:
+            env_arr = np.array(self.env_rewards)
+            stats['env_reward'] = {
+                'mean': self._env_reward_sum / n,
+                'std': float(np.std(env_arr)),
+                'max': self._max_env_reward if self._max_env_reward != float('-inf') else 0.0,
+                'min': self._min_env_reward if self._min_env_reward != float('inf') else 0.0,
+            }
 
         # 2. Recent vs overall comparison (last 100 vs all)
         if n >= 100:
-            recent_100 = results[-100:]
-            recent_env_rewards = [r.env_reward for r in recent_100]
-            recent_successes = sum(1 for r in recent_100 if r.success)
+            recent_env_rewards = self.env_rewards[-100:]
+            recent_successes = sum(self._last_100_successes)
             stats['recent_100'] = {
                 'env_reward_mean': float(np.mean(recent_env_rewards)),
                 'success_count': recent_successes,
-                'success_rate': recent_successes / 100 * 100,
+                'success_rate': recent_successes / min(100, len(self._last_100_successes)) * 100,
             }
 
         # 3. Rolling success rates (last 50 and last 100)
         if n >= 50:
-            last_50_successes = sum(1 for r in results[-50:] if r.success)
-            stats['rolling_success_rate_50'] = last_50_successes / 50 * 100
+            last_50 = list(self._last_100_successes)[-50:]
+            stats['rolling_success_rate_50'] = sum(last_50) / len(last_50) * 100 if last_50 else 0.0
         if n >= 100:
-            last_100_successes = sum(1 for r in results[-100:] if r.success)
-            stats['rolling_success_rate_100'] = last_100_successes / 100 * 100
+            stats['rolling_success_rate_100'] = sum(self._last_100_successes) / len(self._last_100_successes) * 100
 
-        # 4. Near-miss count (env_reward 180-199)
-        near_misses = [r for r in results if 180 <= r.env_reward < 200]
+        # 4. Near-miss count (env_reward 180-199) - compute from primitive list
+        near_miss_count = sum(1 for r in self.env_rewards if 180 <= r < 200)
         stats['near_misses'] = {
-            'count': len(near_misses),
-            'episodes': [r.episode_num for r in near_misses[-10:]],  # Last 10
+            'count': near_miss_count,
+            'episodes': [],  # Episode numbers not tracked to save memory
         }
 
-        # 5. Time to first success (first episode with env_reward >= 200)
-        first_success_episode = None
-        for r in results:
-            if r.success:
-                first_success_episode = r.episode_num
-                break
-        stats['first_success_episode'] = first_success_episode
+        # 5. Time to first success
+        stats['first_success_episode'] = self.first_success_episode
 
-        # 6. Best recent streak (max streak in last 200 episodes)
+        # 6. Best recent streak (from streak_history if long enough)
         if n >= 50:
             lookback = min(200, n)
-            recent_results = results[-lookback:]
-            max_recent_streak = 0
-            current_streak = 0
-            for r in recent_results:
-                if r.success:
-                    current_streak += 1
-                    max_recent_streak = max(max_recent_streak, current_streak)
-                else:
-                    current_streak = 0
-            stats['max_streak_last_200'] = max_recent_streak
+            recent_streaks = self.streak_history[-lookback:]
+            stats['max_streak_last_200'] = max(recent_streaks) if recent_streaks else 0
 
-        # 7. Landing quality for successful episodes (env_reward >= 200)
-        successful_episodes = [r for r in results if r.success]
-        if successful_episodes:
-            success_env_rewards = [r.env_reward for r in successful_episodes]
-            stats['successful_landings'] = {
-                'count': len(successful_episodes),
-                'env_reward_mean': float(np.mean(success_env_rewards)),
-                'env_reward_std': float(np.std(success_env_rewards)),
-                'env_reward_min': float(np.min(success_env_rewards)),
-                'env_reward_max': float(np.max(success_env_rewards)),
-            }
-
-            # Get behaviors for successful episodes if available
-            if self.behavior_reports and len(self.behavior_reports) == n:
-                success_indices = [i for i, r in enumerate(results) if r.success]
-                success_behaviors: Dict[str, int] = {}
-                for idx in success_indices:
-                    for behavior in self.behavior_reports[idx].behaviors:
-                        success_behaviors[behavior] = success_behaviors.get(behavior, 0) + 1
-
-                # Calculate rates for key quality behaviors
-                num_successes = len(successful_episodes)
-                stats['success_quality'] = {
-                    'stayed_upright': success_behaviors.get('STAYED_UPRIGHT', 0) / num_successes * 100,
-                    'stayed_centered': success_behaviors.get('STAYED_CENTERED', 0) / num_successes * 100,
-                    'controlled_descent': success_behaviors.get('CONTROLLED_DESCENT', 0) / num_successes * 100,
-                    'clean_touchdown': success_behaviors.get('TOUCHED_DOWN_CLEAN', 0) / num_successes * 100,
-                    'landed_perfectly': success_behaviors.get('LANDED_PERFECTLY', 0) / num_successes * 100,
-                    'landed_softly': success_behaviors.get('LANDED_SOFTLY', 0) / num_successes * 100,
+        # 7. Landing quality for successful episodes
+        if self.success_count > 0:
+            # Get env_rewards for successful episodes
+            success_rewards = [r for r, s in zip(self.env_rewards, self.successes_bool) if s]
+            if success_rewards:
+                stats['successful_landings'] = {
+                    'count': len(success_rewards),
+                    'env_reward_mean': float(np.mean(success_rewards)),
+                    'env_reward_std': float(np.std(success_rewards)),
+                    'env_reward_min': float(np.min(success_rewards)),
+                    'env_reward_max': float(np.max(success_rewards)),
                 }
+
+            # Success quality from incremental counters
+            num_successes = self.success_count
+            stats['success_quality'] = {
+                'stayed_upright': self._success_behavior_counts.get('STAYED_UPRIGHT', 0) / num_successes * 100,
+                'stayed_centered': self._success_behavior_counts.get('STAYED_CENTERED', 0) / num_successes * 100,
+                'controlled_descent': self._success_behavior_counts.get('CONTROLLED_DESCENT', 0) / num_successes * 100,
+                'clean_touchdown': self._success_behavior_counts.get('TOUCHED_DOWN_CLEAN', 0) / num_successes * 100,
+                'landed_perfectly': self._success_behavior_counts.get('LANDED_PERFECTLY', 0) / num_successes * 100,
+                'landed_softly': self._success_behavior_counts.get('LANDED_SOFTLY', 0) / num_successes * 100,
+            }
 
         return stats
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert all tracked data to a dictionary for serialization."""
+        """Convert tracked data to a dictionary for serialization."""
         return {
-            'episode_results': [asdict(r) for r in self.episode_results],
-            'successes': self.successes,
-            'action_stats': [asdict(s) for s in self.action_stats],
+            'env_rewards': self.env_rewards,
+            'shaped_bonuses': self.shaped_bonuses,
+            'durations': self.durations,
+            'successes_bool': self.successes_bool,
+            'outcomes': self.outcomes,
+            'streak_history': self.streak_history,
+            'total_episodes': self.total_episodes,
+            'success_count': self.success_count,
+            'max_streak': self.max_streak,
             'q_values': self.q_values,
             'actor_losses': self.actor_losses,
             'critic_losses': self.critic_losses,
@@ -718,34 +844,9 @@ class DiagnosticsReporter:
         # Advanced statistics
         self._print_advanced_statistics()
 
-        # Action statistics
+        # Action statistics (removed for memory efficiency)
         print(f"\n--- ACTION STATISTICS ---")
-        if summary.mean_main_thruster is not None:
-            print(f"Episodes with action tracking: {len(self.tracker.action_stats)}")
-            print(f"Mean main thruster: {summary.mean_main_thruster:.3f}")
-            print(f"Mean side thruster: {summary.mean_side_thruster:.3f}")
-            print(f"Mean action magnitude: {summary.mean_action_magnitude:.3f}")
-
-            if len(self.tracker.action_stats) >= 50:
-                recent_main = np.mean([
-                    s.mean_main_thruster for s in self.tracker.action_stats[-50:]
-                ])
-                recent_side = np.mean([
-                    s.mean_side_thruster for s in self.tracker.action_stats[-50:]
-                ])
-                recent_mag = np.mean([
-                    s.mean_magnitude for s in self.tracker.action_stats[-50:]
-                ])
-                print(f"\nLast 50 episodes:")
-                print(f"  Main thruster: {recent_main:.3f}")
-                print(f"  Side thruster: {recent_side:.3f}")
-                print(f"  Action magnitude: {recent_mag:.3f}")
-
-            high_count = int(summary.high_thruster_episode_ratio * len(self.tracker.action_stats))
-            print(f"\nEpisodes with high main thruster (>0.5): "
-                  f"{high_count}/{len(self.tracker.action_stats)}")
-        else:
-            print("No action data collected (training hasn't started yet)")
+        print("Action tracking disabled for memory efficiency")
 
         # Training metrics
         print(f"\n--- TRAINING METRICS ---")
@@ -907,37 +1008,31 @@ class DiagnosticsReporter:
             print(f"\n  Crashed episodes: {crashed['count']} (mean: {crashed['mean']:.1f})")
 
     def _print_recent_episodes(self, n: int = 5) -> None:
-        """Print details of recent episodes."""
+        """Print details of recent episodes from primitive lists."""
         print(f"\n--- LAST {n} EPISODES DETAIL ---")
 
-        results = self.tracker.episode_results
-        if not results:
+        total = self.tracker.total_episodes
+        if total == 0:
             print("No episodes recorded")
             return
 
-        start_idx = max(0, len(results) - n)
-        for result in results[start_idx:]:
-            info_str = str(result)
+        start_idx = max(0, total - n)
+        for i in range(start_idx, total):
+            env_reward = self.tracker.env_rewards[i]
+            shaped_bonus = self.tracker.shaped_bonuses[i]
+            total_reward = env_reward + shaped_bonus
+            success = self.tracker.successes_bool[i]
+            duration = self.tracker.durations[i]
+            outcome = self.tracker.outcomes[i] if i < len(self.tracker.outcomes) else 'UNKNOWN'
 
-            # Try to find corresponding action stats
-            stats_offset = len(results) - len(self.tracker.action_stats)
-            stats_idx = result.episode_num - stats_offset
-
-            if 0 <= stats_idx < len(self.tracker.action_stats):
-                stats = self.tracker.action_stats[stats_idx]
-                q_idx = stats_idx if stats_idx < len(self.tracker.q_values) else -1
-                q_val = self.tracker.q_values[q_idx] if q_idx >= 0 else 0
-
-                info_str += (f", Main: {stats.mean_main_thruster:.2f}, "
-                            f"Side: {stats.mean_side_thruster:.2f}, Q: {q_val:.2f}")
-
-            print(info_str)
+            status = "SUCCESS" if success else "FAILURE"
+            print(f"  Episode {i+1}: {outcome} - {status} - "
+                  f"reward={total_reward:.1f} (env={env_reward:.1f}, shaped={shaped_bonus:+.1f}), "
+                  f"duration={duration:.1f}s")
 
     def _print_key_data(self) -> None:
         """Print key data counts for analysis."""
-        rewards = self.tracker.get_rewards()
-        print(f"\nData points collected: {len(rewards)} episodes, "
-              f"{len(self.tracker.action_stats)} action stats, "
+        print(f"\nData points collected: {self.tracker.total_episodes} episodes, "
               f"{len(self.tracker.q_values)} training logs")
 
     def _print_behavior_statistics(self) -> None:

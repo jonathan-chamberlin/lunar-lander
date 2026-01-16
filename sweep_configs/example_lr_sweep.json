@@ -1,0 +1,10 @@
+{
+  "name": "lr_sweep",
+  "description": "Grid search over actor and critic learning rates",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "parameters": {
+    "actor_lr": [0.0005, 0.001, 0.002],
+    "critic_lr": [0.001, 0.002, 0.004]
+  }
+}

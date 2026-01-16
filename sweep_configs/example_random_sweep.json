@@ -1,0 +1,30 @@
+{
+  "name": "random_hyperparameter_sweep",
+  "description": "Random search over multiple hyperparameters",
+  "type": "random",
+  "episodes_per_run": 500,
+  "num_samples": 10,
+  "seed": 42,
+  "parameters": {
+    "actor_lr": {
+      "min": 0.0001,
+      "max": 0.01,
+      "type": "log"
+    },
+    "critic_lr": {
+      "min": 0.0001,
+      "max": 0.01,
+      "type": "log"
+    },
+    "batch_size": {
+      "min": 32,
+      "max": 256,
+      "type": "int"
+    },
+    "tau": {
+      "min": 0.001,
+      "max": 0.01,
+      "type": "float"
+    }
+  }
+}

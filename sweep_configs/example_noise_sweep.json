@@ -1,0 +1,11 @@
+{
+  "name": "noise_sweep",
+  "description": "Grid search over exploration noise parameters",
+  "type": "grid",
+  "episodes_per_run": 300,
+  "parameters": {
+    "sigma": [0.2, 0.3, 0.4],
+    "noise_scale_initial": [0.8, 1.0, 1.2],
+    "noise_decay_episodes": [200, 300, 400]
+  }
+}

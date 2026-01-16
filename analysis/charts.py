@@ -149,7 +149,7 @@ class ChartGenerator:
             The matplotlib Figure object, or None if not enough data
         """
         # Check if we have enough data
-        num_episodes = len(self.tracker.episode_results)
+        num_episodes = self.tracker.total_episodes
         if num_episodes < 10:
             logger.warning(f"Not enough episodes ({num_episodes}) to generate meaningful charts")
             return None
@@ -207,16 +207,16 @@ class ChartGenerator:
         Args:
             ax: Matplotlib axes to plot on
         """
-        results = self.tracker.episode_results
+        env_rewards_list, shaped_bonuses_list = self.tracker.get_reward_data()
 
-        if not results:
+        if not env_rewards_list:
             ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Episode Reward Over Time')
             return
 
-        episodes = np.arange(len(results))
-        env_rewards = np.array([r.env_reward for r in results])
-        shaped_bonuses = np.array([r.shaped_bonus for r in results])
+        episodes = np.arange(len(env_rewards_list))
+        env_rewards = np.array(env_rewards_list)
+        shaped_bonuses = np.array(shaped_bonuses_list)
 
         # Stacked bars: env_reward on bottom, shaped_bonus on top
         # Use width=1 for edge-to-edge bars (appears continuous at scale)
@@ -245,15 +245,15 @@ class ChartGenerator:
         Args:
             ax: Matplotlib axes to plot on
         """
-        results = self.tracker.episode_results
+        durations_list = self.tracker.get_duration_data()
 
-        if not results:
+        if not durations_list:
             ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Episode Duration')
             return
 
-        episodes = np.arange(len(results))
-        durations = np.array([r.duration_seconds for r in results])
+        episodes = np.arange(len(durations_list))
+        durations = np.array(durations_list)
 
         # Plot raw durations as transparent scatter
         ax.scatter(episodes, durations, alpha=0.3, s=8, color='purple', label='Duration')
@@ -277,19 +277,16 @@ class ChartGenerator:
         Args:
             ax: Matplotlib axes to plot on
         """
-        results = self.tracker.episode_results
+        batch_success_rates, _ = self.tracker.get_success_data()
 
-        if not results:
+        if not batch_success_rates:
             ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Success Rate by Batch')
             return
 
-        # Compute success rate per batch
-        def calc_success_rate(batch):
-            successes = sum(1 for r in batch if r.success)
-            return (successes / len(batch)) * 100
-
-        labels, success_rates = self._compute_batch_stats(results, calc_success_rate)
+        # Generate labels from batch data
+        success_rates = batch_success_rates
+        labels = [f"{i*self.batch_size + 1}-{(i+1)*self.batch_size}" for i in range(len(success_rates))]
 
         # Plot as line chart with markers
         x_positions = list(range(len(labels)))
@@ -324,13 +321,19 @@ class ChartGenerator:
         Args:
             ax: Matplotlib axes to plot on
         """
-        if not self.tracker.behavior_reports:
+        batch_distributions = self.tracker.get_outcome_distribution_per_batch()
+
+        if not batch_distributions:
             ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Outcome Distribution')
             return
 
-        outcome_data = self._get_outcome_distribution_per_batch()
-        num_batches = len(outcome_data['landed'])
+        # Convert to per-category arrays
+        num_batches = len(batch_distributions)
+        outcome_data = {cat: [] for cat in OUTCOME_CATEGORY_ORDER}
+        for batch_dist in batch_distributions:
+            for cat in OUTCOME_CATEGORY_ORDER:
+                outcome_data[cat].append(batch_dist.get(cat, 0.0))
 
         if num_batches == 0:
             ax.text(0.5, 0.5, 'No batch data', ha='center', va='center', transform=ax.transAxes)
@@ -380,45 +383,26 @@ class ChartGenerator:
         Args:
             ax: Matplotlib axes to plot on
         """
-        num_episodes = len(self.tracker.behavior_reports)
+        batch_behavior_freqs = self.tracker.get_behavior_frequencies_per_batch()
 
-        if num_episodes == 0:
+        if not batch_behavior_freqs:
             ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Behavior Heatmap')
             return
 
-        num_batches = (num_episodes + self.batch_size - 1) // self.batch_size
+        num_batches = len(batch_behavior_freqs)
 
-        # Get all behavior frequencies per batch
-        all_batch_freqs = []
-        for batch_idx in range(num_batches):
-            start = batch_idx * self.batch_size
-            end = min(start + self.batch_size, num_episodes)
-            freqs = self._get_behavior_frequencies(start, end)
-            all_batch_freqs.append(freqs)
-
-        # Select behaviors to show (use report card behaviors + any high-frequency ones)
-        all_behaviors = set()
-        for freqs in all_batch_freqs:
-            all_behaviors.update(freqs.keys())
-
-        # Prioritize report card behaviors, then add others by frequency
-        selected_behaviors = []
-        for b in REPORT_CARD_BEHAVIORS:
-            if b in all_behaviors:
-                selected_behaviors.append(b)
-
-        # Limit to 15 behaviors for readability
-        selected_behaviors = selected_behaviors[:15]
+        # Use REPORT_CARD_BEHAVIORS as selected behaviors
+        selected_behaviors = REPORT_CARD_BEHAVIORS[:15]
 
         if not selected_behaviors:
             ax.text(0.5, 0.5, 'No behavior data', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Behavior Heatmap')
             return
 
-        # Build heatmap matrix
+        # Build heatmap matrix from pre-computed batch frequencies
         heatmap_data = np.zeros((len(selected_behaviors), num_batches))
-        for batch_idx, freqs in enumerate(all_batch_freqs):
+        for batch_idx, freqs in enumerate(batch_behavior_freqs):
             for behavior_idx, behavior in enumerate(selected_behaviors):
                 heatmap_data[behavior_idx, batch_idx] = freqs.get(behavior, 0)
 
@@ -454,7 +438,7 @@ class ChartGenerator:
         Args:
             ax: Matplotlib axes to plot on
         """
-        streaks = self._compute_consecutive_streaks()
+        streaks, max_streak, max_streak_episode = self.tracker.get_streak_data()
 
         if not streaks:
             ax.text(0.5, 0.5, 'No data', ha='center', va='center', transform=ax.transAxes)
@@ -462,8 +446,8 @@ class ChartGenerator:
             return
 
         episodes = list(range(len(streaks)))
-        max_streak = max(streaks)
-        max_streak_idx = streaks.index(max_streak)
+        # Find index of max streak in streak history
+        max_streak_idx = streaks.index(max_streak) if max_streak in streaks else 0
 
         # Plot streak line
         ax.fill_between(episodes, streaks, alpha=0.3, color='green')
@@ -498,16 +482,15 @@ class ChartGenerator:
         Args:
             ax: Matplotlib axes to plot on
         """
-        num_episodes = len(self.tracker.behavior_reports)
+        num_episodes = self.tracker.total_episodes
 
         if num_episodes < 100:
             ax.text(0.5, 0.5, 'Need 100+ episodes', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Report Card')
             return
 
-        # Get frequencies for first and last 100 episodes
-        first_100 = self._get_behavior_frequencies(0, 100)
-        last_100 = self._get_behavior_frequencies(num_episodes - 100, num_episodes)
+        # Get frequencies from incremental tracking
+        first_100, last_100 = self.tracker.get_report_card_data()
 
         # Filter to report card behaviors that have data
         behaviors = []
@@ -559,15 +542,13 @@ class ChartGenerator:
         Args:
             ax: Matplotlib axes to plot on
         """
-        # Get env_reward distribution from tracker
-        dist = self.tracker.get_env_reward_distribution()
+        # Get landed env_rewards from tracker
+        rewards = self.tracker.get_landing_histogram_data()
 
-        if 'landed' not in dist or not dist['landed']['rewards']:
+        if not rewards:
             ax.text(0.5, 0.5, 'No landing data', ha='center', va='center', transform=ax.transAxes)
             ax.set_title('Env Reward Distribution')
             return
-
-        rewards = dist['landed']['rewards']
 
         # Create histogram with fixed bins spanning typical reward range
         bins = np.arange(-200, 320, 20)  # -200 to 300 in steps of 20
@@ -634,118 +615,6 @@ class ChartGenerator:
 
         return np.concatenate([cumsum_pad, rolling])
 
-    def _compute_batch_stats(
-        self,
-        episodes: List,
-        stat_func
-    ) -> Tuple[List[str], List[float]]:
-        """Compute statistics for each batch of episodes.
-
-        Args:
-            episodes: List of episode data
-            stat_func: Function to compute statistic for each batch
-
-        Returns:
-            Tuple of (batch_labels, batch_values)
-        """
-        num_episodes = len(episodes)
-        num_batches = (num_episodes + self.batch_size - 1) // self.batch_size
-
-        labels = []
-        values = []
-
-        for batch_idx in range(num_batches):
-            start = batch_idx * self.batch_size
-            end = min(start + self.batch_size, num_episodes)
-            batch = episodes[start:end]
-
-            if batch:
-                labels.append(f"{start + 1}-{end}")
-                values.append(stat_func(batch))
-
-        return labels, values
-
-    def _get_behavior_frequencies(
-        self,
-        start_idx: int,
-        end_idx: int
-    ) -> Dict[str, float]:
-        """Get behavior frequencies for a range of episodes.
-
-        Args:
-            start_idx: Starting episode index
-            end_idx: Ending episode index (exclusive)
-
-        Returns:
-            Dictionary mapping behavior names to frequency percentages
-        """
-        reports = self.tracker.behavior_reports[start_idx:end_idx]
-        num_episodes = len(reports)
-
-        if num_episodes == 0:
-            return {}
-
-        behavior_counts: Dict[str, int] = {}
-        for report in reports:
-            for behavior in report.behaviors:
-                behavior_counts[behavior] = behavior_counts.get(behavior, 0) + 1
-
-        # Convert to percentages
-        return {
-            behavior: (count / num_episodes) * 100
-            for behavior, count in behavior_counts.items()
-        }
-
-    def _get_outcome_distribution_per_batch(self) -> Dict[str, List[float]]:
-        """Get outcome category percentages for each batch.
-
-        Returns:
-            Dictionary mapping outcome categories to lists of percentages per batch
-        """
-        reports = self.tracker.behavior_reports
-        num_episodes = len(reports)
-        num_batches = (num_episodes + self.batch_size - 1) // self.batch_size
-
-        # Initialize result dict
-        result = {cat: [] for cat in OUTCOME_CATEGORY_ORDER}
-
-        for batch_idx in range(num_batches):
-            start = batch_idx * self.batch_size
-            end = min(start + self.batch_size, num_episodes)
-            batch = reports[start:end]
-            batch_len = len(batch)
-
-            if batch_len == 0:
-                for cat in OUTCOME_CATEGORY_ORDER:
-                    result[cat].append(0.0)
-                continue
-
-            # Count outcomes in this batch
-            category_counts = {cat: 0 for cat in OUTCOME_CATEGORY_ORDER}
-            for report in batch:
-                category = OUTCOME_TO_CATEGORY.get(report.outcome, 'crashed')
-                category_counts[category] += 1
-
-            # Convert to percentages
-            for cat in OUTCOME_CATEGORY_ORDER:
-                result[cat].append((category_counts[cat] / batch_len) * 100)
-
-        return result
-
-    def _compute_consecutive_streaks(self) -> List[int]:
-        """Compute consecutive success streak at each episode.
-
-        Returns:
-            List of streak counts (same length as episode_results)
-        """
-        streaks = []
-        current_streak = 0
-
-        for result in self.tracker.episode_results:
-            if result.success:
-                current_streak += 1
-            else:
-                current_streak = 0
-            streaks.append(current_streak)
-
-        return streaks
+    # Note: Helper methods _compute_batch_stats, _get_behavior_frequencies,
+    # _get_outcome_distribution_per_batch, and _compute_consecutive_streaks
+    # have been removed - all data now comes from incremental tracker getters
