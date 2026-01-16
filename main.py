@@ -43,6 +43,7 @@ from analysis.behavior_analysis import BehaviorAnalyzer
 from analysis.charts import ChartGenerator
 from constants import SAFE_LANDING_OUTCOMES
 from analysis.output_formatter import format_behavior_output
+from models import EpisodeData, TimingState, TrainingContext, PyGameContext
 
 # Configure logging
 logging.basicConfig(
@@ -85,83 +86,75 @@ def run_periodic_diagnostics(
 
 
 def finalize_episode(
-    episode_num: int,
-    total_reward: float,
-    env_reward: float,
-    shaped_bonus: float,
-    steps: int,
-    duration_seconds: float,
-    actions_array: np.ndarray,
-    observations_array: np.ndarray,
-    terminated: bool,
-    truncated: bool,
-    success_threshold: float,
-    diagnostics: DiagnosticsTracker,
-    replay_buffer: Union[ReplayBuffer, PrioritizedReplayBuffer],
-    min_experiences: int,
-    rendered: bool = False,
-    start_time: Optional[float] = None,
-    total_steps: int = 0,
-    total_training_updates: int = 0
+    data: EpisodeData,
+    context: TrainingContext,
+    timing: TimingState
 ) -> EpisodeResult:
-    """Create episode result, record it, print status, and track action stats."""
-    success = env_reward >= success_threshold
+    """Create episode result, record it, print status, and track action stats.
+
+    Args:
+        data: Episode data including rewards, actions, observations
+        context: Training context with diagnostics, buffer, thresholds
+        timing: Timing state for speed tracking
+
+    Returns:
+        EpisodeResult for compatibility
+    """
+    success = data.env_reward >= context.success_threshold
 
     # Record episode with incremental statistics (primitives only)
-    diagnostics.record_episode(
-        episode_num=episode_num,
-        env_reward=env_reward,
-        shaped_bonus=shaped_bonus,
-        duration_seconds=duration_seconds,
+    context.diagnostics.record_episode(
+        episode_num=data.episode_num,
+        env_reward=data.env_reward,
+        shaped_bonus=data.shaped_bonus,
+        duration_seconds=data.duration_seconds,
         success=success
     )
 
     # Analyze behaviors first so we can include outcome in the main line
     behavior_report = None
     outcome = 'UNKNOWN'
-    if len(observations_array) > 0 and len(actions_array) > 0:
+    if len(data.observations_array) > 0 and len(data.actions_array) > 0:
         behavior_report = behavior_analyzer.analyze(
-            observations_array, actions_array, terminated, truncated
+            data.observations_array, data.actions_array, data.terminated, data.truncated
         )
         outcome = behavior_report.outcome
         # Record behavior with incremental statistics (primitives only)
-        diagnostics.record_behavior(
+        context.diagnostics.record_behavior(
             outcome=outcome,
             behaviors=behavior_report.behaviors,
-            env_reward=env_reward,
+            env_reward=data.env_reward,
             success=success
         )
 
     # Format the main status line
     status_icon = '✓' if success else '✗'
-    rendered_tag = ' 🎬' if rendered else ''
+    rendered_tag = ' 🎬' if data.rendered else ''
     landed_safely = outcome in SAFE_LANDING_OUTCOMES
     landing_indicator = '✅ Landed Safely' if landed_safely else '❌ Didn\'t land safely'
 
     # Print main line
-    print(f"Run {episode_num} {status_icon} {outcome}{rendered_tag} {landing_indicator} 🥕 Reward: {total_reward:.1f} (env: {env_reward:.1f} / shaped: {shaped_bonus:+.1f})")
+    print(f"Run {data.episode_num} {status_icon} {outcome}{rendered_tag} {landing_indicator} 🥕 Reward: {data.total_reward:.1f} (env: {data.env_reward:.1f} / shaped: {data.shaped_bonus:+.1f})")
 
     # Print categorized behaviors
     if behavior_report and behavior_report.behaviors:
         print(format_behavior_output(behavior_report))
 
     # Record batch speed metrics every 50 episodes for diagnostics
-    if start_time is not None and episode_num > 0 and episode_num % 50 == 0:
-        elapsed = time.time() - start_time
-        batch_num = episode_num // 50
-        diagnostics.record_batch_speed(batch_num, elapsed, total_steps, total_training_updates)
-
-    # Note: action_stats recording removed for memory efficiency
+    if timing.start_time is not None and data.episode_num > 0 and data.episode_num % 50 == 0:
+        elapsed = time.time() - timing.start_time
+        batch_num = data.episode_num // 50
+        context.diagnostics.record_batch_speed(batch_num, elapsed, timing.total_steps, timing.total_training_updates)
 
     # Return result for compatibility (but it's no longer stored in diagnostics)
     result = EpisodeResult(
-        episode_num=episode_num,
-        total_reward=total_reward,
-        env_reward=env_reward,
-        shaped_bonus=shaped_bonus,
-        steps=steps,
+        episode_num=data.episode_num,
+        total_reward=data.total_reward,
+        env_reward=data.env_reward,
+        shaped_bonus=data.shaped_bonus,
+        steps=data.steps,
         success=success,
-        duration_seconds=duration_seconds
+        duration_seconds=data.duration_seconds
     )
     return result
 
@@ -169,16 +162,11 @@ def run_rendered_episode(
     render_env,
     trainer: TD3Trainer,
     noise: OUActionNoise,
-    replay_buffer: Union[ReplayBuffer, PrioritizedReplayBuffer],
     episode_num: int,
     config: Config,
-    diagnostics: DiagnosticsTracker,
-    font: pg.font.Font,
-    screen: pg.Surface,
-    clock: pg.time.Clock,
-    start_time: Optional[float] = None,
-    total_steps: int = 0,
-    total_training_updates: int = 0
+    training_context: TrainingContext,
+    timing_state: TimingState,
+    pygame_ctx: PyGameContext
 ) -> tuple[Optional[EpisodeResult], int]:
     """Run a single rendered episode.
 
@@ -186,13 +174,11 @@ def run_rendered_episode(
         render_env: Gymnasium environment with rgb_array rendering
         trainer: TD3 trainer instance
         noise: Noise generator for exploration
-        replay_buffer: Experience replay buffer
         episode_num: Current episode number
         config: Full configuration
-        diagnostics: Diagnostics tracker
-        font: Pygame font for rendering text overlay
-        screen: Pygame display surface
-        clock: Pygame clock for frame rate control
+        training_context: Training context with diagnostics, buffer, thresholds
+        timing_state: Timing state for speed tracking
+        pygame_ctx: Pygame context with font, screen, clock
 
     Returns:
         Tuple of (EpisodeResult or None if user quit, steps taken this episode)
@@ -225,7 +211,7 @@ def run_rendered_episode(
 
     # Pre-render text if overlay is enabled (same text every frame, no need to re-render)
     if config.display.show_run_overlay:
-        text_surface = font.render(f"Run: {episode_num}", True, config.display.font_color)
+        text_surface = pygame_ctx.font.render(f"Run: {episode_num}", True, config.display.font_color)
         text_pos = (config.display.text_x, config.display.text_y)
 
     while running:
@@ -262,16 +248,16 @@ def run_rendered_episode(
         # Transpose into pre-allocated buffer and blit (pygame needs width-first format)
         frame_buffer[:] = frame.transpose(1, 0, 2)
         pg.surfarray.blit_array(frame_surface, frame_buffer)
-        screen.blit(frame_surface, (0, 0))
+        pygame_ctx.screen.blit(frame_surface, (0, 0))
 
         # Draw text overlay if enabled (pre-rendered)
         if config.display.show_run_overlay:
-            screen.blit(text_surface, text_pos)
+            pygame_ctx.screen.blit(text_surface, text_pos)
 
         # Update display and control frame rate
         pg.display.flip()
         if config.run.framerate is not None:
-            clock.tick(config.run.framerate)
+            pygame_ctx.clock.tick(config.run.framerate)
 
         # Apply reward shaping (pass step count for progressive penalty)
         current_step = len(rewards)  # 0-indexed step count
@@ -286,7 +272,7 @@ def run_rendered_episode(
             next_state=next_state.detach().clone(),
             done=T.tensor(terminated)
         )
-        replay_buffer.push(experience)
+        training_context.replay_buffer.push(experience)
 
         state = next_state
         obs = next_obs
@@ -307,10 +293,11 @@ def run_rendered_episode(
     total_reward = env_reward + shaped_bonus
     duration_seconds = time.time() - episode_start_time
 
-    # Update total steps for this episode
-    updated_total_steps = total_steps + episode_steps
+    # Update timing state with steps from this episode
+    timing_state.total_steps += episode_steps
 
-    result = finalize_episode(
+    # Create episode data for finalize_episode
+    episode_data = EpisodeData(
         episode_num=episode_num,
         total_reward=total_reward,
         env_reward=env_reward,
@@ -321,15 +308,9 @@ def run_rendered_episode(
         observations_array=np.array(observations_list),
         terminated=episode_terminated,
         truncated=episode_truncated,
-        success_threshold=config.environment.success_threshold,
-        diagnostics=diagnostics,
-        replay_buffer=replay_buffer,
-        min_experiences=config.training.min_experiences_before_training,
-        rendered=True,
-        start_time=start_time,
-        total_steps=updated_total_steps,
-        total_training_updates=total_training_updates
+        rendered=True
     )
+    result = finalize_episode(episode_data, training_context, timing_state)
     return result, episode_steps
 
 
@@ -354,6 +335,9 @@ def main() -> None:
     screen = pg.display.set_mode((600, 400))
     pg.display.set_caption("Lunar Lander Training")
     clock = pg.time.Clock()
+
+    # Create pygame context for rendered episodes
+    pygame_ctx = PyGameContext(font=font, screen=screen, clock=clock)
 
     # Initialize components
     trainer = TD3Trainer(config.training, config.environment, config.run)
@@ -388,6 +372,19 @@ def main() -> None:
     training_started = False
     user_quit = False
     error_occurred = None
+
+    # Create shared dataclasses for finalize_episode calls
+    training_context = TrainingContext(
+        diagnostics=diagnostics,
+        replay_buffer=replay_buffer,
+        success_threshold=config.environment.success_threshold,
+        min_experiences=config.training.min_experiences_before_training
+    )
+    timing_state = TimingState(
+        start_time=start_time,
+        total_steps=0,
+        total_training_updates=0
+    )
 
     # Chart folder for this simulation run (created immediately)
     simulation_start_timestamp = datetime.now().strftime("%Y-%m-%d %Hh%Mm%Ss")
@@ -427,18 +424,14 @@ def main() -> None:
                         env_bundle.render_env,
                         trainer,
                         noise,
-                        replay_buffer,
                         completed_episodes,
                         config,
-                        diagnostics,
-                        font,
-                        screen,
-                        clock,
-                        start_time,
-                        total_steps,
-                        trainer.training_steps
+                        training_context,
+                        timing_state,
+                        pygame_ctx
                     )
-                    total_steps += episode_steps
+                    # Sync local total_steps with timing_state (updated inside run_rendered_episode)
+                    total_steps = timing_state.total_steps
 
                     if result is None:
                         user_quit = True
@@ -544,7 +537,8 @@ def main() -> None:
                         total_reward, env_reward, shaped_bonus, actions_array, observations_array, duration_seconds = \
                             episode_manager.get_episode_stats(i)
 
-                        finalize_episode(
+                        # Create dataclasses for finalize_episode
+                        episode_data = EpisodeData(
                             episode_num=completed_episodes,
                             total_reward=total_reward,
                             env_reward=env_reward,
@@ -555,14 +549,9 @@ def main() -> None:
                             observations_array=observations_array,
                             terminated=terminateds[i],
                             truncated=truncateds[i],
-                            success_threshold=config.environment.success_threshold,
-                            diagnostics=diagnostics,
-                            replay_buffer=replay_buffer,
-                            min_experiences=config.training.min_experiences_before_training,
-                            start_time=start_time,
-                            total_steps=total_steps,
-                            total_training_updates=trainer.training_steps
+                            rendered=False
                         )
+                        finalize_episode(episode_data, training_context, timing_state)
 
                         episode_manager.reset_env(i)
                         noise.reset(i)
@@ -582,6 +571,8 @@ def main() -> None:
                 observations = next_observations
                 steps_since_training += config.run.num_envs
                 total_steps += config.run.num_envs  # Track total steps for SPS
+                timing_state.total_steps = total_steps
+                timing_state.total_training_updates = trainer.training_steps
 
                 # Training updates
                 if config.run.training_enabled and replay_buffer.is_ready(config.training.min_experiences_before_training):
