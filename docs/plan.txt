@@ -113,8 +113,8 @@ LEFT OFF: Copy and paste that huge print statement into claude. "Here are diagno
 
 (VERIFY) I should run the simulation and watch what the agent does, then what is printed, and ensure they match.
 
-Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\print_statement_1_14_2025 and the final chart       
-  in C:\Repositories for Git\lunar-lander-file-folder\chart_images\2026-01-14 23h52m21s\chart_final_1652.png. From the chart success rate by batch, plus         
+Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\training\print_statement_1_16_2026_morning and the final chart       
+  in C:\Repositories for Git\lunar-lander-file-folder\chart_images\2026-01-16 00h23m26s\chart_final_4293.png. From the chart success rate by batch, plus         
   looking at print statements to understand the outcome of the current codebase. Especially look at the top right chart episode duration. Why does the           
   simulation take longer and longer as more episodes are completed? Is it because the agent is taking longer in it's runs? I don't think so, i think there       
   is an action limit for each episode. Or are the calaculations taking longer? I think this one is more likely. In fact This simulation could've went longer     
@@ -165,9 +165,7 @@ Read the print diagnostic print statement at C:\Repositories for Git\lunar-lande
 
 
 
-
-
-The agent hasn't gotten 100 successes in a row by the time the simulation reached a memory limit (around 3500 runs). Keep in mind that i will run it for at least 1500 runs. Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\print_statement_1_14_2025 and the final chart in C:\Repositories for Git\lunar-lander-file-folder\chart_images\2026-01-14 23h52m21s\chart_final_1652.png. From the chart success rate by batch, plus looking at print statements to understand the outcome of the current codebase. As the run index gets 700+, the shaped reward becomes more than 1000, while the env reward is still often under 200. This causes an issue since i found the shaped reward helps the agent land initially. Without shaped rewards the agent doesn't end up landing at all even after more than 200 runs. But shaped reward becomes a liability later in the simulation because, when we look at success rate by batch, we see the success rate went up initially in the simulation, but as it progressed the success rate went down as the agent learned to optimize for the shaped reward instead of the env reward. What are some ways to handle this.
+The agent hasn't gotten 100 successes in a row yet. Keep in mind that i will run it for at least 2000 runs. Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\training\print_statement_1_16_2026_morning and the final chart in C:\Repositories for Git\lunar-lander-file-folder\chart_images\2026-01-16 00h23m26s\chart_final_4293.png. From the chart success rate by batch, plus looking at print statements to understand the outcome of the current codebase. As the run index gets 700+, the shaped reward becomes more than 1000, while the env reward is still often under 200. Altough around This causes an issue since i found the shaped reward helps the agent land initially. Without shaped rewards the agent doesn't end up landing at all even after more than 200 runs. But shaped reward becomes a liability later in the simulation because, when we look at success rate by batch, we see the success rate went up initially in the simulation, but as it progressed the success rate went down as the agent learned to optimize for the shaped reward instead of the env reward. What are some ways to handle this.
 
 Reverse the order of the items on the key in the outcome distribution chart. This will make it so the order of items in the key matches the order of the items displayed in the chart
 

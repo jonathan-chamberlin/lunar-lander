@@ -1,0 +1,282 @@
+===========================================================================
+TRAINING COMPLETED SUCCESSFULLY
+Completed 4293 episodes
+================================================================================
+
+================================================================================
+TRAINING DIAGNOSTICS SUMMARY
+================================================================================
+
+--- REWARD STATISTICS ---
+Total episodes: 4293
+Successes: 2078
+Success rate: 48.4%
+Mean reward: 228.35
+Max reward: 862.13
+Min reward: -2238.67
+Final 50 episodes mean reward: 207.31
+
+--- ADVANCED STATISTICS ---
+Env reward: mean=99.4, std=218.1, range=[-2222.2, 322.4]
+First success (env >= 200): episode 481
+Near misses (180-199): 115 episodes
+Rolling success rate (last 50): 28.0%
+Rolling success rate (last 100): 35.0%
+Last 100 vs overall: env_reward 128.2 vs 99.4 (↑)
+Max streak (last 200 episodes): 3
+
+  SUCCESSFUL LANDINGS (env >= 200):
+    Count: 2078
+    Env reward: mean=253.1, std=22.9
+    Range: [200.1, 322.4]
+
+  SUCCESS QUALITY BEHAVIORS:
+    Stayed upright:       46.2%
+    Stayed centered:      58.4%
+    Controlled descent:   91.6%
+    Clean touchdown:      65.6%
+    Landed perfectly:      0.0%
+    Landed softly:         0.0%
+
+--- ACTION STATISTICS ---
+Episodes with action tracking: 4280
+Mean main thruster: -0.120
+Mean side thruster: 0.052
+Mean action magnitude: 0.530
+
+Last 50 episodes:
+  Main thruster: -0.089
+  Side thruster: 0.015
+  Action magnitude: 0.513
+
+Episodes with high main thruster (>0.5): 2/4280
+
+--- TRAINING METRICS ---
+Mean Q-value: 17.586
+Q-value trend (first 10 vs last 10): -21.186 -> 32.710
+Mean actor loss: -18.1463
+Mean critic loss: 0.4880
+Mean actor gradient norm: 1.9899
+Mean critic gradient norm: 2.1498
+
+Episodes with high actor loss (>1.0): 78/428
+
+--- BEHAVIOR ANALYSIS ---
+Episodes analyzed: 4293
+
+  OUTCOME DISTRIBUTION:
+    LANDED       2785 ( 64.9%)
+    CRASHED       167 (  3.9%)
+    TIMED_OUT     149 (  3.5%)
+    FLEW_OFF      154 (  3.6%)
+
+  OUTCOME DETAILS:
+    LANDED_PERFECTLY         1393 ( 32.4%)
+    SUSTAINED_BOUNCING        887 ( 20.7%)
+    LANDED_SOFTLY             644 ( 15.0%)
+    LANDED_ONE_LEG            511 ( 11.9%)
+    LANDED_TILTED             236 (  5.5%)
+    CRASHED_SPINNING          158 (  3.7%)
+    CRASHED_OTHER             151 (  3.5%)
+    TIMED_OUT_HOVERING        147 (  3.4%)
+
+  CRASH TYPE BREAKDOWN:
+    CRASHED_SPINNING          94.6%
+    CRASHED_SIDEWAYS           4.2%
+    CRASHED_FAST_TILTED        1.2%
+    CRASHED_FAST_VERTICAL      0.0%
+
+  TOP 15 BEHAVIORS:
+    DIRECT_APPROACH              4172 ( 97.2%)
+    REACHED_LOW_ALTITUDE         4150 ( 96.7%)
+    ERRATIC_THRUST               3036 ( 70.7%)
+    YO_YO_PATTERN                2881 ( 67.1%)
+    GRADUAL_SLOWDOWN             2853 ( 66.5%)
+    CONTROLLED_DESCENT           2767 ( 64.5%)
+    HORIZONTAL_OSCILLATION       2731 ( 63.6%)
+    MAIN_THRUST_NONE             2720 ( 63.4%)
+    TOUCHED_DOWN_CLEAN           2328 ( 54.2%)
+    STANDARD_EPISODE             2175 ( 50.7%)
+    STAYED_CENTERED              2146 ( 50.0%)
+    STAYED_UPRIGHT               1753 ( 40.8%)
+    SIDE_THRUST_BALANCED         1751 ( 40.8%)
+    SPINNING_UNCONTROLLED        1636 ( 38.1%)
+    BOUNCED                      1461 ( 34.0%)
+
+  FLIGHT QUALITY METRICS:
+    Stayed upright:           40.8%
+    Stayed centered:          50.0%
+    Controlled descent:       64.5%
+    Controlled throughout:     6.1%
+    Never stabilized:          3.5%
+
+  PROGRESS INDICATORS:
+    Reached low altitude:     96.7%
+    Made leg contact:         84.8%
+    Clean touchdown:          54.2%
+
+  QUALITY SUMMARY:
+    Runs with good behaviors:  99.3%
+    Runs with bad behaviors:   84.4%
+
+  BATCH TRENDS (per 50 episodes):
+    Batch     Success%   Landed%  Crashed%      SPS      UPS
+    -------- --------- --------- --------- -------- --------
+    1-50          0.0%     44.0%     32.0%     125      18
+    51-100        0.0%     38.0%     62.0%     119      22
+    101-150       0.0%     28.0%     68.0%     117      24
+    151-200       0.0%     36.0%     64.0%     108      23
+    201-250       0.0%     16.0%     58.0%     104      23
+    251-300       0.0%      0.0%      0.0%     102      23
+    301-350       0.0%      8.0%      0.0%     100      24
+    351-400       0.0%     14.0%      0.0%      94      23
+    401-450       0.0%     12.0%      0.0%      91      22
+    451-500      12.0%     28.0%      0.0%      87      21
+    501-550      16.0%     54.0%      0.0%      84      21
+    551-600      20.0%     64.0%      0.0%      83      20
+    601-650       8.0%     50.0%      0.0%      82      20
+    651-700      18.0%     42.0%      4.0%      80      20
+    701-750      38.0%     50.0%      0.0%      79      20
+    751-800      18.0%     32.0%      0.0%      77      19
+    801-850      42.0%     44.0%      0.0%      76      19
+    851-900      56.0%     70.0%      0.0%      76      19
+    901-950      54.0%     50.0%      0.0%      74      18
+    951-1000     54.0%     76.0%      6.0%      74      18
+    1001-1050     56.0%     70.0%      2.0%      73      18
+    1051-1100     64.0%     76.0%      0.0%      72      18
+    1101-1150     70.0%     80.0%      0.0%      71      18
+    1151-1200     90.0%     80.0%      0.0%      71      18
+    1201-1250     78.0%     68.0%      0.0%      70      17
+    1251-1300     72.0%     76.0%      0.0%      69      17
+    1301-1350     70.0%     78.0%      2.0%      69      17
+    1351-1400     56.0%     74.0%      0.0%      68      17
+    1401-1450     66.0%     76.0%      0.0%      68      17
+    1451-1500     78.0%     78.0%      0.0%      67      17
+    1501-1550     52.0%     86.0%      4.0%      67      17
+    1551-1600     54.0%     84.0%      0.0%      66      16
+    1601-1650     64.0%     90.0%      0.0%      66      16
+    1651-1700     56.0%     80.0%      0.0%      65      16
+    1701-1750     54.0%     74.0%      0.0%      65      16
+    1751-1800     54.0%     62.0%      2.0%      64      16
+    1801-1850     66.0%     66.0%      0.0%      64      16
+    1851-1900     70.0%     84.0%      0.0%      63      16
+    1901-1950     52.0%     72.0%      2.0%      63      16
+    1951-2000     66.0%     64.0%      8.0%      62      15
+    2001-2050     52.0%     80.0%      0.0%      62      15
+    2051-2100     64.0%     78.0%      0.0%      61      15
+    2101-2150     86.0%     88.0%      0.0%      61      15
+    2151-2200     64.0%     68.0%      0.0%      60      15
+    2201-2250     64.0%     68.0%      0.0%      60      15
+    2251-2300     82.0%     88.0%      0.0%      59      15
+    2301-2350     78.0%     78.0%      0.0%      59      15
+    2351-2400     84.0%     80.0%      0.0%      58      14
+    2401-2450     62.0%     72.0%      0.0%      58      14
+    2451-2500     44.0%     82.0%      0.0%      57      14
+    2501-2550     52.0%     66.0%      0.0%      57      14
+    2551-2600     48.0%     70.0%      0.0%      56      14
+    2601-2650     48.0%     76.0%      0.0%      56      14
+    2651-2700     56.0%     68.0%      0.0%      56      14
+    2701-2750     56.0%     52.0%      0.0%      55      14
+    2751-2800     50.0%     60.0%      0.0%      55      14
+    2801-2850     62.0%     62.0%      0.0%      54      14
+    2851-2900     74.0%     60.0%      0.0%      54      13
+    2901-2950     82.0%     68.0%      0.0%      54      13
+    2951-3000     64.0%     66.0%      0.0%      53      13
+    3001-3050     68.0%     62.0%      0.0%      53      13
+    3051-3100     62.0%     76.0%      0.0%      53      13
+    3101-3150     58.0%     64.0%      0.0%      52      13
+    3151-3200     60.0%     74.0%      2.0%      52      13
+    3201-3250     48.0%     70.0%      0.0%      52      13
+    3251-3300     56.0%     68.0%      0.0%      51      13
+    3301-3350     48.0%     66.0%      2.0%      51      13
+    3351-3400     52.0%     90.0%      0.0%      51      13
+    3401-3450     48.0%     82.0%      2.0%      51      13
+    3451-3500     52.0%     74.0%      0.0%      51      13
+    3501-3550     32.0%     76.0%      4.0%      50      13
+    3551-3600     32.0%     66.0%      8.0%      50      12
+    3601-3650     50.0%     50.0%      0.0%      50      12
+    3651-3700     50.0%     80.0%      2.0%      50      12
+    3701-3750     58.0%     76.0%      0.0%      49      12
+    3751-3800     50.0%     62.0%      0.0%      49      12
+    3801-3850     62.0%     74.0%      0.0%      49      12
+    3851-3900     70.0%     76.0%      0.0%      49      12
+    3901-3950     54.0%     64.0%      0.0%      48      12
+    3951-4000     46.0%     60.0%      0.0%      48      12
+    4001-4050     40.0%     70.0%      0.0%      48      12
+    4051-4100     40.0%     86.0%      0.0%      48      12
+    4101-4150     18.0%     72.0%      0.0%      48      12
+    4151-4200     46.0%     82.0%      0.0%      47      12
+    4201-4250     34.0%     74.0%      0.0%      47      12
+    4251-4293     30.2%     83.7%      0.0%    100.0%     93.0%
+
+  BEHAVIOR CORRELATION WITH SUCCESS:
+    Behavior                       In Success   In Failure    Delta
+    ---------------------------- ------------ ------------ --------
+    CONTROLLED_DESCENT                  91.6%        39.0%   +52.6%
+    RAPID_DESCENT                        0.0%        34.8%   -34.8%
+    TOUCHED_DOWN_CLEAN                  65.6%        43.5%   +22.1%
+    NO_CONTACT_MADE                      0.0%        17.3%   -17.3%
+    STAYED_CENTERED                     58.4%        42.1%   +16.3%
+    STAYED_UPRIGHT                      46.2%        35.8%   +10.3%
+    HOVER_MAINTAINED                     5.1%        14.9%    -9.7%
+    NEVER_STABILIZED                     0.0%         6.7%    -6.7%
+    REACHED_LOW_ALTITUDE               100.0%        93.6%    +6.4%
+    CONTROLLED_THROUGHOUT                3.1%         9.0%    -5.9%
+    SMOOTH_THRUST                        0.0%         1.6%    -1.6%
+    ERRATIC_THRUST                      71.2%        70.3%    +0.9%
+
+--- CONSECUTIVE SUCCESS STREAK ---
+Max streak: 25 (achieved at episode 1182)
+Current streak: 0
+
+  STREAK BREAKS (streaks of 5+ that ended):
+    Episode    Streak   Outcome                  Env Reward
+    ---------- -------- ------------------------ ------------
+    3262       6        LANDED_PERFECTLY         28.0
+    3275       5        LANDED_ONE_LEG           10.2
+    3375       7        LANDED_PERFECTLY         63.3
+    3444       5        LANDED_PERFECTLY         34.0
+    3725       9        LANDED_TILTED            3.5
+    3812       8        LANDED_SOFTLY            35.3
+    3854       9        LANDED_PERFECTLY         46.0
+    3866       11       LANDED_ONE_LEG           27.8
+    3880       8        LANDED_ONE_LEG           55.4
+    3951       5        LANDED_SOFTLY            65.5
+
+  STREAK BREAK CAUSES (total 99 breaks):
+    LANDED_PERFECTLY          36 ( 36.4%)
+    LANDED_SOFTLY             24 ( 24.2%)
+    SUSTAINED_BOUNCING        15 ( 15.2%)
+    LANDED_TILTED             11 ( 11.1%)
+    LANDED_ONE_LEG             8 (  8.1%)
+
+--- ENV REWARD DISTRIBUTION (LANDINGS) ---
+  Total landings: 2785
+  Mean env_reward: 132.9 (std: 181.6)
+  Range: -968.2 to 322.4
+
+  ENV REWARD BREAKDOWN:
+    >= 200 (SUCCESS):    1496 ( 53.7%)
+    180-199 (near miss):   39 (  1.4%)
+    150-179:               43 (  1.5%)
+    < 150:               1207 ( 43.3%)
+
+  Crashed episodes: 318 (mean: -166.9)
+
+--- LAST 5 EPISODES DETAIL ---
+Episode 4288: SUCCESS, Reward: 434.2 (env: 257.2, shaped: 177.1), Duration: 13.52s, Main: -0.73, Side: -0.31, Q: 0.00
+Episode 4289: FAILURE, Reward: 102.4 (env: 25.9, shaped: 76.4), Duration: 2.93s, Main: 0.00, Side: 0.17, Q: 0.00
+Episode 4290: FAILURE, Reward: 101.1 (env: 26.5, shaped: 74.6), Duration: 2.79s, Main: 0.06, Side: -0.21, Q: 0.00
+Episode 4291: FAILURE, Reward: 96.2 (env: 23.8, shaped: 72.5), Duration: 3.42s, Main: 0.03, Side: -0.11, Q: 0.00
+Episode 4292: FAILURE, Reward: 219.4 (env: 154.4, shaped: 65.0), Duration: 21.66s, Main: -0.80, Side: -0.50, Q: 0.00
+
+Data points collected: 4293 episodes, 4280 action stats, 428 training logs
+
+================================================================================
+END OF DIAGNOSTICS
+================================================================================
+
+Total simulation time: 31954.63 seconds
+Average speed: 47 steps/sec | 12 updates/sec
+Total steps: 1,500,155 | Total updates: 373,096
+09:16:11 | INFO | Final chart saved to chart_images\2026-01-16 00h23m26s\chart_final_4293.png
