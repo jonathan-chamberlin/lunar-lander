@@ -129,6 +129,8 @@ Run 85 ✗ FLEW_OFF_LEFT 🎬 ❌ Didn't land safely 🥕 Reward: -121.2 (env: -
     👣 NO_CONTACT
     📋 STANDARD_EPISODE
 
+The chart outcome distribution has a white part of values at the top, meaning that some runs do not fit into another of the 4 buckets given. What might these runs be? Brainstorm before coming up with an answer, then crete a plan to make it so all runs in the chart have a label.
+
 (VERIFY) Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\training\print_statement_1_16_2026_morning and the final chart       
   in C:\Repositories for Git\lunar-lander-file-folder\chart_images\2026-01-16 00h23m26s\chart_final_4293.png. From the chart success rate by batch, plus         
   looking at print statements to understand the outcome of the current codebase. Especially look at the top right chart episode duration. Why does the           

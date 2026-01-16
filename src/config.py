@@ -17,7 +17,7 @@ class RunConfig:
     #   'human'  - Verbose, narrative, detailed output with emojis (default)
     #   'agent'  - Minimal, low-entropy, structured output for LLM context efficiency
     #   'silent' - No console output
-    print_mode: str = 'human'
+    print_mode: str = 'agent'
 
     # Rendering options:
     #   'none' - No episodes rendered (fastest training)
