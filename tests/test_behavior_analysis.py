@@ -201,7 +201,7 @@ class TestBehaviorAnalyzer:
             truncated=False
         )
 
-        assert "SPINNING_UNCONTROLLED" in report.behaviors
+        assert "EXCEEDED_SPIN_RATE" in report.behaviors
 
     def test_leg_contact_detection(self, analyzer, sample_observations, sample_actions):
         """Test detection of leg contact events."""

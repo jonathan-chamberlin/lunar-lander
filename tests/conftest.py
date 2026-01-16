@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 import torch as T
 
-# Add parent directory to path for imports
+# Add src directory to path for imports
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from config import Config, TrainingConfig, NoiseConfig, RunConfig, EnvironmentConfig
 from data_types import Experience, ExperienceBatch

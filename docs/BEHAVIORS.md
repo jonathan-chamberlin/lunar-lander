@@ -31,8 +31,8 @@ One outcome is assigned per episode based on terminal conditions.
 | `LANDED_SOFTLY` | Good landing | Both legs, velocity < 1.0, \|angle\| < 0.3 |
 | `LANDED_HARD` | Heavy impact landing | Both legs, velocity < 2.0 |
 | `LANDED_TILTED` | Landed at angle | Both legs, \|angle\| > 0.3 |
-| `LANDED_ONE_LEG` | Single leg contact | One leg contact at termination |
-| `LANDED_SLIDING` | Landed with horizontal drift | Both legs, \|vx\| > 0.1 |
+| `TOUCHED_DOWN_ONE_LEG` | Single leg contact | One leg contact at termination |
+| `LANDED_WITH_DRIFT` | Landed with horizontal drift | Both legs, \|vx\| > 0.1 |
 | `TIMED_OUT_ON_GROUND` | Timeout with legs down | Truncated with both legs on ground |
 
 ### Crash Outcomes
@@ -41,8 +41,8 @@ One outcome is assigned per episode based on terminal conditions.
 |----------|-------------|-----------------|
 | `CRASHED_SPINNING` | Impact while rotating | Terminated, \|angular_vel\| > 2.0 rad/s |
 | `CRASHED_SIDEWAYS` | Impact nearly horizontal | Terminated, \|angle\| > 1.0 |
-| `CRASHED_FAST_TILTED` | High-speed tilted impact | Terminated, \|angle\| > 0.5 |
-| `CRASHED_FAST_VERTICAL` | High-speed vertical impact | Terminated, \|angle\| <= 0.5, \|vy\| > 1.0 |
+| `CRASHED_TILTED` | High-speed tilted impact | Terminated, \|angle\| > 0.5 |
+| `CRASHED_HIGH_VELOCITY` | High-speed vertical impact | Terminated, \|angle\| <= 0.5, \|vy\| > 1.0 |
 | `CRASHED_OTHER` | Other crash scenarios | Terminated, doesn't match above criteria |
 
 ### Timeout Outcomes
@@ -75,7 +75,7 @@ Describes the vertical movement behavior throughout the episode.
 | `SLOW_DESCENT` | Very gradual descent | Mean vy between -0.1 and 0, >50% descending |
 | `RAPID_DESCENT` | Fast downward movement | Mean vy < -0.5 |
 | `FREEFALL` | Minimal thrust descent | Mean main thrust < 0.1, mean vy < -0.3 |
-| `HOVER_MAINTAINED` | Altitude held constant | y variance < 0.1 |
+| `STABLE_ALTITUDE` | Altitude held constant | y variance < 0.1 |
 | `ASCENDED` | Net upward movement | Final y - initial y > 0.3 |
 | `YO_YO_PATTERN` | Up/down oscillation | vy sign changed > 4 times |
 | `STALLED_THEN_FELL` | Hovered then dropped | Stable first 30%, then mean vy < -0.4 |
@@ -112,7 +112,7 @@ Describes rotation and angular stability.
 | `HEAVY_LEFT_TILT` | Significant left rotation | Min angle < -0.5 |
 | `HEAVY_RIGHT_TILT` | Significant right rotation | Max angle > 0.5 |
 | `FLIPPED_OVER` | Rotated past horizontal | \|angle\| > 1.57 (pi/2) |
-| `SPINNING_UNCONTROLLED` | Rapid rotation | \|angular_vel\| > 2.0 rad/s |
+| `EXCEEDED_SPIN_RATE` | Rapid rotation | \|angular_vel\| > 2.0 rad/s |
 | `RECOVERED_FROM_TILT` | Corrected from tilt | Max \|angle\| > 0.5, final \|angle\| < 0.2 |
 | `PROGRESSIVE_TILT` | Steadily increasing tilt | Late \|angle\| > early \|angle\| + 0.2 |
 | `WOBBLING` | Left/right oscillation | Angle sign changed > 8 times |
@@ -264,7 +264,7 @@ Special behaviors detected on truncated (timed out) episodes.
 ## Example Output
 
 ```
-Run 47 ✗ CRASHED_FAST_TILTED ❌ Didn't land safely 🥕 Reward: -124.3 (env: -180.2 / shaped: +55.9)
+Run 47 ✗ CRASHED_TILTED ❌ Didn't land safely 🥕 Reward: -124.3 (env: -180.2 / shaped: +55.9)
     ↕ RAPID_DESC
     ↔ DRIFT_R
     ↻ TILT_R

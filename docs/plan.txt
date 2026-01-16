@@ -113,7 +113,23 @@ LEFT OFF: Copy and paste that huge print statement into claude. "Here are diagno
 
 (VERIFY) I should run the simulation and watch what the agent does, then what is printed, and ensure they match.
 
-Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\training\print_statement_1_16_2026_morning and the final chart       
+Here are some example of the agent actually crashing into the ground close to the left side of the screen, but definetly not flying off the left side of the screen. Change the parameter for this behavior so crashing on the ground, even close to the left side of the screen, is considered a crash. Flying off the the left or right should only be if their position actually hits the leftmost or rightmost boundary of the environment. Leftmost is when horizonatl coord is <=-2.45. Rightmost is when horizonatal coord is >=2.45. 
+Run 86 ✗ FLEW_OFF_LEFT_TILTED 🎬 ❌ Didn't land safely 🥕 Reward: -120.6 (env: -207.6 / shaped: +87.0)
+    ↔ DRIFT_L
+    ↕ CTRL_DESC, HOVER, DIRECT
+    ↻ TILT_R, SPINNING
+    🔥 MAIN_LIGHT
+    👣 SCRAPE_R, LOW_ALT
+    📋 LONG_EPISODE
+Run 85 ✗ FLEW_OFF_LEFT 🎬 ❌ Didn't land safely 🥕 Reward: -121.2 (env: -156.5 / shaped: +35.3)
+    ↔ DRIFT_L
+    ↕ CTRL_DESC, HOVER, DIRECT
+    ↻ UPRIGHT
+    🔥 MAIN_NONE
+    👣 NO_CONTACT
+    📋 STANDARD_EPISODE
+
+(VERIFY) Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\training\print_statement_1_16_2026_morning and the final chart       
   in C:\Repositories for Git\lunar-lander-file-folder\chart_images\2026-01-16 00h23m26s\chart_final_4293.png. From the chart success rate by batch, plus         
   looking at print statements to understand the outcome of the current codebase. Especially look at the top right chart episode duration. Why does the           
   simulation take longer and longer as more episodes are completed? Is it because the agent is taking longer in it's runs? I don't think so, i think there       
@@ -164,8 +180,9 @@ Read the print diagnostic print statement at C:\Repositories for Git\lunar-lande
   Verify GC frequency does not increase over time 
 
 
-
 The agent hasn't gotten 100 successes in a row yet. Keep in mind that i will run it for at least 3000 episodes. Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\training\print_statement_1_16_2026_morning and the final chart in C:\Repositories for Git\lunar-lander-file-folder\chart_images\2026-01-16 00h23m26s\chart_final_4293.png. From the chart success rate by batch, plus looking at print statements to understand the outcome of the current codebase. As the run index gets 700+, the shaped reward becomes more than 500, while the env reward is still often under 200. Altough around This causes an issue since i found the shaped reward helps the agent land initially. Without shaped rewards the agent doesn't end up landing at all even after more than 400 runs. But shaped reward becomes a slight liability later in the simulation because, when we look at success rate by batch, we see the success rate went up initially in the simulation, but as it progressed the success rate went down as the agent learned to optimize for the shaped reward instead of the env reward. What are some ways to handle this. Note that by looking at the heatmap, we see that behaviors spinning out of control and erratic thrust were less common before episode 1500, and more common from then on for the rest of the simulation. If we look at the consecutive successes chart, we see the max consecutive successes was 25 which is much better than before at only 2. After looking at the print statement and chart, look at the codebase and see if i am correctly diagnosing the problem. Present root cause analysis of how to make it so the agent can get 100 consecutive runs if i run it for at least 3000 eepisodes.
+
+Test if the simulaton slows down as more and more runs accumulate. If no, commit message should be that i fixed O(n) runtime thing of generating the graphs by instead storing aggregate metrics.
 
 Reverse the order of the items on the key in the outcome distribution chart. This will make it so the order of items in the key matches the order of the items displayed in the chart
 

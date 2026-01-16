@@ -25,6 +25,12 @@ dev = [
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
 # =============================================================================
 # pytest configuration
 # =============================================================================
@@ -95,7 +101,8 @@ ignore = [
 "__init__.py" = ["F401"]  # Allow unused imports in __init__
 
 [tool.ruff.lint.isort]
-known-first-party = ["config", "data_types", "constants", "training", "analysis"]
+known-first-party = ["config", "data_types", "constants", "training", "analysis", "models", "main"]
+src = ["src"]
 
 # =============================================================================
 # mypy configuration
@@ -126,7 +133,7 @@ ignore_missing_imports = true
 # coverage configuration
 # =============================================================================
 [tool.coverage.run]
-source = ["."]
+source = ["src"]
 omit = [
     "tests/*",
     ".venv/*",
