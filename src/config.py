@@ -14,10 +14,11 @@ class RunConfig:
     training_enabled: bool = True  # Set False to skip all network training (for testing)
 
     # Print mode options:
-    #   'human'  - Verbose, narrative, detailed output with emojis (default)
-    #   'agent'  - Minimal, low-entropy, structured output for LLM context efficiency
-    #   'silent' - No console output
-    print_mode: str = 'agent'
+    #   'human'      - Verbose, narrative, detailed output with emojis
+    #   'minimal'    - Minimal, low-entropy, structured output for LLM context efficiency
+    #   'silent'     - No console output
+    #   'background' - Only batch completion messages (e.g., "Batch 1 (Runs 1-100) completed")
+    print_mode: str = 'background'
 
     # Rendering options:
     #   'none' - No episodes rendered (fastest training)
@@ -31,7 +32,7 @@ class RunConfig:
 
     def __post_init__(self) -> None:
         # Validate print_mode
-        valid_print_modes = ('human', 'agent', 'silent')
+        valid_print_modes = ('human', 'minimal', 'silent', 'background')
         if self.print_mode not in valid_print_modes:
             raise ValueError(f"Invalid print_mode: {self.print_mode}. Use one of {valid_print_modes}")
 
@@ -65,7 +66,7 @@ class DisplayConfig:
 
     # Set to True to show run number overlay on screen during rendering.
     # Set to False to disable overlay and improve rendering performance (~50% faster).
-    show_run_overlay: bool = False
+    show_run_overlay: bool = True
 
     font_size: int = 30
     font_color: Tuple[int, int, int] = (255, 255, 0)  # Yellow

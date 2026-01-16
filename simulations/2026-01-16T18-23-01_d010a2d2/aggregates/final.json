@@ -1,0 +1,176 @@
+{
+  "_metadata": {
+    "schema_version": "1.0.0",
+    "completed_episodes": 1,
+    "created_at": "2026-01-16T18:23:07.150395"
+  },
+  "summary": {
+    "total_episodes": 1,
+    "num_successes": 0,
+    "success_rate": 0.0,
+    "mean_reward": -318.0415223043721,
+    "max_reward": -318.0415223043721,
+    "min_reward": -318.0415223043721,
+    "final_50_mean_reward": null
+  },
+  "training": {
+    "mean_q_value": null,
+    "q_value_trend": null,
+    "mean_actor_loss": null,
+    "mean_critic_loss": null,
+    "mean_actor_grad_norm": null,
+    "mean_critic_grad_norm": null
+  },
+  "streaks": {
+    "max_streak": 0,
+    "max_streak_episode": 0,
+    "current_streak": 0
+  },
+  "behaviors": {
+    "outcome_counts": {
+      "FLEW_OFF_RIGHT_TILTED": 1
+    },
+    "outcome_category_counts": {
+      "landed": 0,
+      "crashed": 0,
+      "timed_out": 0,
+      "flew_off": 1,
+      "bouncing": 0
+    },
+    "top_behaviors": [
+      {
+        "behavior": "RAPID_DESCENT",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "FREEFALL",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "STALLED_THEN_FELL",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "DRIFTED_RIGHT",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "STRONG_LATERAL_VELOCITY",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "HEAVY_LEFT_TILT",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "PROGRESSIVE_TILT",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "MAIN_THRUST_NONE",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "SIDE_THRUST_BALANCED",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "ERRATIC_THRUST",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "SCRAPED_LEFT_LEG",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "SHORT_EPISODE",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "DIRECT_APPROACH",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "SPIRAL_DESCENT",
+        "count": 1,
+        "percentage": 100.0
+      },
+      {
+        "behavior": "REACHED_LOW_ALTITUDE",
+        "count": 1,
+        "percentage": 100.0
+      }
+    ],
+    "quality_rates": {
+      "good_behavior_rate": 100.0,
+      "bad_behavior_rate": 100.0,
+      "low_altitude_rate": 100.0,
+      "contact_rate": 100.0,
+      "clean_touchdown_rate": 0.0
+    },
+    "flight_quality": {
+      "stayed_upright_rate": 0.0,
+      "stayed_centered_rate": 0.0,
+      "controlled_descent_rate": 0.0,
+      "controlled_throughout_rate": 0.0,
+      "never_stabilized_rate": 0.0
+    },
+    "success_correlation": {
+      "success_behavior_rates": {
+        "STAYED_UPRIGHT": 0.0,
+        "STAYED_CENTERED": 0.0,
+        "CONTROLLED_DESCENT": 0.0,
+        "REACHED_LOW_ALTITUDE": 0.0,
+        "TOUCHED_DOWN_CLEAN": 0.0,
+        "CONTROLLED_THROUGHOUT": 0.0,
+        "NEVER_STABILIZED": 0.0,
+        "RAPID_DESCENT": 0.0,
+        "STABLE_ALTITUDE": 0.0,
+        "ERRATIC_THRUST": 0.0,
+        "SMOOTH_THRUST": 0.0,
+        "NO_CONTACT_MADE": 0.0
+      },
+      "failure_behavior_rates": {
+        "STAYED_UPRIGHT": 0.0,
+        "STAYED_CENTERED": 0.0,
+        "CONTROLLED_DESCENT": 0.0,
+        "REACHED_LOW_ALTITUDE": 100.0,
+        "TOUCHED_DOWN_CLEAN": 0.0,
+        "CONTROLLED_THROUGHOUT": 0.0,
+        "NEVER_STABILIZED": 0.0,
+        "RAPID_DESCENT": 100.0,
+        "STABLE_ALTITUDE": 0.0,
+        "ERRATIC_THRUST": 100.0,
+        "SMOOTH_THRUST": 0.0,
+        "NO_CONTACT_MADE": 0.0
+      }
+    },
+    "crash_type_distribution": {}
+  },
+  "advanced": {
+    "env_reward": {
+      "mean": -320.2415223043721,
+      "std": 0.0,
+      "max": -320.2415223043721,
+      "min": -320.2415223043721
+    },
+    "near_misses": {
+      "count": 0,
+      "episodes": []
+    },
+    "first_success_episode": null
+  }
+}

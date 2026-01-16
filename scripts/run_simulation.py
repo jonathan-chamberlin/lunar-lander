@@ -1,17 +1,17 @@
 #!/usr/bin/env python
-"""Agent-safe simulation wrapper.
+"""Minimal-output simulation wrapper.
 
-This wrapper enforces an agent-safe execution environment by:
-- Automatically enabling minimal, low-entropy output (print_mode='agent')
+This wrapper enforces a minimal-output execution environment by:
+- Automatically enabling minimal, low-entropy output (print_mode='minimal')
 - Preventing verbose per-episode diagnostics
-- Preserving agent context for interpreting trends, diagnostics, and charts
+- Preserving context for interpreting trends, diagnostics, and charts
 
 Usage:
     python scripts/run_simulation.py [--episodes N] [--human]
 
 Options:
     --episodes N    Override number of episodes (default: from config)
-    --human         Use human mode (verbose output) instead of agent mode
+    --human         Use human mode (verbose output) instead of minimal mode
 """
 
 import sys
@@ -39,19 +39,19 @@ for i, arg in enumerate(sys.argv):
             print(f"Invalid episodes value: {sys.argv[i + 1]}")
             sys.exit(1)
 
-# Now import config and patch it for agent mode
+# Now import config and patch it for minimal mode
 from config import Config, RunConfig
 
-# Create a modified RunConfig with agent mode
+# Create a modified RunConfig with minimal mode
 original_run_config = RunConfig
 
-class AgentRunConfig(RunConfig):
-    """RunConfig with agent mode defaults."""
+class MinimalRunConfig(RunConfig):
+    """RunConfig with minimal mode defaults."""
 
     def __new__(cls, *args, **kwargs):
-        # Force agent mode unless --human was specified
+        # Force minimal mode unless --human was specified
         if 'print_mode' not in kwargs:
-            kwargs['print_mode'] = 'human' if use_human_mode else 'agent'
+            kwargs['print_mode'] = 'human' if use_human_mode else 'minimal'
 
         # Override episodes if specified
         if num_episodes is not None and 'num_episodes' not in kwargs:
@@ -61,13 +61,13 @@ class AgentRunConfig(RunConfig):
 
 # Monkey-patch the config module
 import config
-config.RunConfig = AgentRunConfig
+config.RunConfig = MinimalRunConfig
 
 # Now run main
 if __name__ == '__main__':
     from main import main
 
-    mode = 'HUMAN' if use_human_mode else 'AGENT'
+    mode = 'HUMAN' if use_human_mode else 'MINIMAL'
     print(f"=== Simulation Wrapper: {mode} mode ===")
     if num_episodes:
         print(f"=== Episodes override: {num_episodes} ===")

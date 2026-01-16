@@ -93,8 +93,8 @@ def run_periodic_diagnostics(
     if output.is_verbose():
         # HUMAN mode: full verbose diagnostics
         reporter.print_summary()
-    elif output.is_agent_mode():
-        # AGENT mode: detailed structured summary with deltas
+    elif output.is_minimal_mode():
+        # MINIMAL mode: detailed structured summary with deltas
         output.print_periodic_summary(completed_episodes, tracker=diagnostics)
     # SILENT mode: no output
 
@@ -562,6 +562,10 @@ def main() -> None:
 
                     # Periodic diagnostics and chart generation every 100 episodes
                     if completed_episodes % 100 == 0:
+                        # Print batch completion for background mode
+                        batch_num = completed_episodes // 100
+                        output.print_batch_completed(batch_num, (batch_num - 1) * 100 + 1, completed_episodes, diagnostics)
+
                         run_periodic_diagnostics(
                             reporter, diagnostics, charts_folder, text_folder, completed_episodes, output
                         )
@@ -650,6 +654,10 @@ def main() -> None:
 
                         # Periodic diagnostics and chart generation every 100 episodes
                         if completed_episodes % 100 == 0:
+                            # Print batch completion for background mode
+                            batch_num = completed_episodes // 100
+                            output.print_batch_completed(batch_num, (batch_num - 1) * 100 + 1, completed_episodes, diagnostics)
+
                             run_periodic_diagnostics(
                                 reporter, diagnostics, charts_folder, text_folder, completed_episodes, output
                             )
@@ -742,7 +750,7 @@ def main() -> None:
             try:
                 if output.is_verbose():
                     reporter.print_summary()
-                # AGENT mode: detailed summary already printed in print_final_summary
+                # MINIMAL mode: detailed summary already printed in print_final_summary
             except Exception as e:
                 logger.error(f"Failed to print full diagnostics: {e}")
                 # Try minimal diagnostics (only in non-silent mode)

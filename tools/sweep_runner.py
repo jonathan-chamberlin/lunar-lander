@@ -250,6 +250,13 @@ def run_training_with_config(config: Config, run_name: str, results_dir: Path) -
                     noise.reset(i)
                     completed_episodes += 1
 
+                    # Print batch completion every 100 episodes
+                    if completed_episodes % 100 == 0:
+                        batch_num = completed_episodes // 100
+                        batch_successes = successes[-100:] if len(successes) >= 100 else successes
+                        batch_success_rate = sum(batch_successes) / len(batch_successes) * 100 if batch_successes else 0
+                        print(f"  Batch {batch_num} (Runs {(batch_num-1)*100+1}-{completed_episodes}) completed. Success: {batch_success_rate:.0f}%")
+
                     if completed_episodes >= config.run.num_episodes:
                         break
 

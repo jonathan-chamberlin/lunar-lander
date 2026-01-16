@@ -3,7 +3,7 @@
 This module provides a centralized system for controlling output verbosity
 across the simulation. It supports three modes:
 - HUMAN: Verbose, narrative, detailed output with emojis
-- AGENT: Minimal, low-entropy, structured output for LLM context efficiency
+- MINIMAL: Minimal, low-entropy, structured output for LLM context efficiency
 - SILENT: No console output
 
 The simulation behavior is identical across all modes - only output differs.
@@ -20,9 +20,10 @@ if TYPE_CHECKING:
 
 class PrintMode(Enum):
     """Output verbosity modes."""
-    HUMAN = "human"    # Verbose, narrative output with emojis
-    AGENT = "agent"    # Minimal, structured output for LLMs
-    SILENT = "silent"  # No console output
+    HUMAN = "human"        # Verbose, narrative output with emojis
+    MINIMAL = "minimal"    # Minimal, structured output for LLMs
+    SILENT = "silent"      # No console output
+    BACKGROUND = "background"  # Minimal: only batch completion messages
 
 
 @dataclass
@@ -49,8 +50,8 @@ class CheckpointSnapshot:
 
 
 @dataclass
-class AgentModeStats:
-    """Incremental statistics for agent-mode periodic summaries.
+class MinimalModeStats:
+    """Incremental statistics for minimal-mode periodic summaries.
 
     Tracks rolling statistics that are reset after each periodic summary.
     Uses exponential moving averages and simple counters for efficiency.
@@ -213,23 +214,24 @@ class OutputController:
 
     def __init__(self, mode: PrintMode = PrintMode.HUMAN):
         self.mode = mode
-        self.agent_stats = AgentModeStats()
-        self._summary_interval = 100  # Episodes between agent-mode summaries
+        self.minimal_stats = MinimalModeStats()
+        self._summary_interval = 100  # Episodes between minimal-mode summaries
 
     @classmethod
     def from_string(cls, mode_str: str) -> 'OutputController':
         """Create OutputController from string mode name.
 
         Args:
-            mode_str: One of 'human', 'agent', 'silent'
+            mode_str: One of 'human', 'minimal', 'silent'
 
         Returns:
             OutputController configured for the specified mode
         """
         mode_map = {
             'human': PrintMode.HUMAN,
-            'agent': PrintMode.AGENT,
+            'minimal': PrintMode.MINIMAL,
             'silent': PrintMode.SILENT,
+            'background': PrintMode.BACKGROUND,
         }
         mode = mode_map.get(mode_str.lower(), PrintMode.HUMAN)
         return cls(mode)
@@ -262,11 +264,16 @@ class OutputController:
         if self.mode == PrintMode.SILENT:
             return
 
-        if self.mode == PrintMode.AGENT:
+        if self.mode == PrintMode.BACKGROUND:
+            # No per-episode output, but still track stats for batch summary
+            self.minimal_stats.record_episode(env_reward, success, outcome_category)
+            return
+
+        if self.mode == PrintMode.MINIMAL:
             # Minimal output: just episode number
             print(f"Run: {episode_num}")
             # Record stats for periodic summary
-            self.agent_stats.record_episode(env_reward, success, outcome_category)
+            self.minimal_stats.record_episode(env_reward, success, outcome_category)
             return
 
         # HUMAN mode: full verbose output
@@ -297,6 +304,30 @@ class OutputController:
             return False
         return episode_num > 0 and episode_num % self._summary_interval == 0
 
+    def print_batch_completed(
+        self,
+        batch_num: int,
+        batch_start: int,
+        batch_end: int,
+        tracker: Optional['DiagnosticsTracker'] = None
+    ) -> None:
+        """Print batch completion message for BACKGROUND mode.
+
+        Args:
+            batch_num: Batch number (1-indexed)
+            batch_start: First episode in batch
+            batch_end: Last episode in batch
+            tracker: DiagnosticsTracker for success rate (optional)
+        """
+        if self.mode != PrintMode.BACKGROUND:
+            return
+
+        # Get period stats and compute success rate for this batch
+        period_stats = self.minimal_stats.get_period_stats()
+        success_pct = period_stats.get('success_rate', 0) if period_stats else 0
+
+        print(f"Batch {batch_num} (Runs {batch_start}-{batch_end}) completed. Success: {success_pct:.0f}%")
+
     def print_periodic_summary(
         self,
         episode_num: int,
@@ -305,38 +336,43 @@ class OutputController:
         """Print a periodic summary based on current mode.
 
         For HUMAN mode, this is handled by reporter.print_summary().
-        For AGENT mode, this prints a detailed structured block with deltas.
+        For MINIMAL mode, this prints a detailed structured block with deltas.
+        For BACKGROUND mode, this is handled by print_batch_completed().
 
         Args:
             episode_num: Current episode number
-            tracker: DiagnosticsTracker for detailed statistics (optional for agent mode)
+            tracker: DiagnosticsTracker for detailed statistics (optional for minimal mode)
         """
         if self.mode == PrintMode.SILENT:
             return
 
-        if self.mode == PrintMode.AGENT:
-            self._print_agent_detailed_summary(episode_num, tracker)
+        if self.mode == PrintMode.BACKGROUND:
+            # BACKGROUND mode: batch completion handled separately via print_batch_completed
+            return
+
+        if self.mode == PrintMode.MINIMAL:
+            self._print_minimal_detailed_summary(episode_num, tracker)
             return
 
         # HUMAN mode: handled externally by reporter.print_summary()
         pass
 
-    def _print_agent_detailed_summary(
+    def _print_minimal_detailed_summary(
         self,
         episode_num: int,
         tracker: Optional['DiagnosticsTracker'] = None
     ) -> None:
-        """Print detailed agent mode summary with tiered structure and deltas.
+        """Print detailed minimal mode summary with tiered structure and deltas.
 
         Args:
             episode_num: Current episode number
             tracker: DiagnosticsTracker for detailed statistics
         """
-        period_stats = self.agent_stats.get_period_stats()
+        period_stats = self.minimal_stats.get_period_stats()
         if not period_stats:
             return
 
-        prev = self.agent_stats.prev_checkpoint
+        prev = self.minimal_stats.prev_checkpoint
 
         # === QUICK SUMMARY (4 lines) ===
         print(f"--- Summary @ {episode_num} ---")
@@ -509,7 +545,7 @@ class OutputController:
 
         Args:
             episode_num: Current episode number
-            period_stats: Period statistics from agent_stats
+            period_stats: Period statistics from minimal_stats
             tracker: DiagnosticsTracker for additional metrics
         """
         checkpoint = CheckpointSnapshot(episode=episode_num)
@@ -539,7 +575,7 @@ class OutputController:
                 checkpoint.contact_rate = behavior_stats.contact_rate
                 checkpoint.clean_touchdown_rate = behavior_stats.clean_touchdown_rate
 
-        self.agent_stats.prev_checkpoint = checkpoint
+        self.minimal_stats.prev_checkpoint = checkpoint
 
     def print_training_started(self, episode_num: int, buffer_size: int) -> None:
         """Print training started message.
@@ -551,7 +587,7 @@ class OutputController:
         if self.mode == PrintMode.SILENT:
             return
 
-        if self.mode == PrintMode.AGENT:
+        if self.mode == PrintMode.MINIMAL:
             print(f"Training started @ {episode_num} ({buffer_size} exp)")
             return
 
@@ -580,7 +616,20 @@ class OutputController:
         if self.mode == PrintMode.SILENT:
             return
 
-        if self.mode == PrintMode.AGENT:
+        if self.mode == PrintMode.BACKGROUND:
+            # Minimal final summary for background mode
+            status = "ERROR" if error_occurred else "DONE"
+            success_rate = 0.0
+            if tracker and tracker.total_episodes > 0:
+                success_rate = tracker.success_count / tracker.total_episodes * 100
+            print(f"\n=== {status}: {completed_episodes} episodes, {success_rate:.0f}% success ===")
+            if elapsed_time and elapsed_time > 0:
+                print(f"Time: {elapsed_time:.0f}s")
+            if error_occurred:
+                print(f"Error: {error_occurred}")
+            return
+
+        if self.mode == PrintMode.MINIMAL:
             status = "ERROR" if error_occurred else "DONE"
             print(f"\n=== {status}: {completed_episodes}ep ===")
             if elapsed_time and elapsed_time > 0:
@@ -593,7 +642,7 @@ class OutputController:
             # Print final detailed summary if tracker available
             if tracker and completed_episodes > 0:
                 # Force a final summary print
-                self._print_agent_detailed_summary(completed_episodes, tracker)
+                self._print_minimal_detailed_summary(completed_episodes, tracker)
             return
 
         # HUMAN mode: verbose output
@@ -638,6 +687,10 @@ class OutputController:
         """Check if all output is suppressed."""
         return self.mode == PrintMode.SILENT
 
-    def is_agent_mode(self) -> bool:
-        """Check if agent (minimal) mode is active."""
-        return self.mode == PrintMode.AGENT
+    def is_minimal_mode(self) -> bool:
+        """Check if minimal mode is active."""
+        return self.mode == PrintMode.MINIMAL
+
+    def is_background_mode(self) -> bool:
+        """Check if background (batch-only) mode is active."""
+        return self.mode == PrintMode.BACKGROUND
