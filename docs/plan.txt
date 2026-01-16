@@ -71,9 +71,9 @@ LEFT OFF: Copy and paste that huge print statement into claude. "Here are diagno
 
 
 
-Resume claude instance. My goal is to make sure that each behavior is correctly labeled. 
+(DONE) Resume claude instance. My goal is to make sure that each behavior is correctly labeled. 
 
-I noticed that sometimes the agent does a bouncing behavior, where on leg is in contact with the ground, and the agent bounces up and down a little bit keeping that one leg in contact while the other leg taps and taps. This should be a specific behavior. Before changing this, give me some ideas of how this could be handled. I could see how it could be considered a landing since both legs are on the ground, but on the other hand i'm looking for clean landings where it comes to rest, not a bouncing behavior. Here is an example of a print statement for one of these runs <>Run 671 ✗ TIMED_OUT_HOVERING 🎬 ❌ Didn't land safely 🥕 Reward: 1026.3 (env: -2.7 / shaped: +1029.0)
+(VERIFY) I noticed that sometimes the agent does a bouncing behavior, where on leg is in contact with the ground, and the agent bounces up and down a little bit keeping that one leg in contact while the other leg taps and taps. This should be a specific behavior. Before changing this, give me some ideas of how this could be handled. I could see how it could be considered a landing since both legs are on the ground, but on the other hand i'm looking for clean landings where it comes to rest, not a bouncing behavior. Here is an example of a print statement for one of these runs <>Run 671 ✗ TIMED_OUT_HOVERING 🎬 ❌ Didn't land safely 🥕 Reward: 1026.3 (env: -2.7 / shaped: +1029.0)
     ↔ CENTERED, H_OSCILLATE
     ↕ SLOW_DESC, HOVER, YO_YO, DIRECT, SPIRAL, GRADUAL
     ↻ UPRIGHT, SPINNING, WOBBLING
@@ -111,7 +111,59 @@ I noticed that sometimes the agent does a bouncing behavior, where on leg is in 
     👣 CLEAN_TD, BOUNCED, MULTI_TD, ONE_LEG, LOW_ALT
     📋 VERY_LONG_EPISODE</>
 
-I should run the simulation and watch what the agent does, then what is printed, and ensure they match.
+(VERIFY) I should run the simulation and watch what the agent does, then what is printed, and ensure they match.
+
+Read the print diagnostic print statement at C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\print_statement_1_14_2025 and the final chart       
+  in C:\Repositories for Git\lunar-lander-file-folder\chart_images\2026-01-14 23h52m21s\chart_final_1652.png. From the chart success rate by batch, plus         
+  looking at print statements to understand the outcome of the current codebase. Especially look at the top right chart episode duration. Why does the           
+  simulation take longer and longer as more episodes are completed? Is it because the agent is taking longer in it's runs? I don't think so, i think there       
+  is an action limit for each episode. Or are the calaculations taking longer? I think this one is more likely. In fact This simulation could've went longer     
+  but I got a pygame out of memory error. That might clarify things. Do an analysis and find out why this likely occurs  
+  Task List                                                                                                                                                       
+  Replace unbounded diagnostics storage with incremental statistics                                                                                              
+                               
+  Remove or stop appending to episode_results, behavior_reports, and action_stats                                                                                
+                               
+  Do not store per-episode objects long-term                                                                                                                                                 
+  Define incremental diagnostic metrics (running statistics)                                                                                                     
+                               
+  Total episodes                                                                                                                                                   
+  Mean episode duration                                                                                                                                                   
+  Mean reward                                                                                                                                                    
+  Crash rate                                                                                                                                                       
+  Timeout rate                                                                                                                                                      
+  Success rate                                                                                                                                                      
+  Update all incremental statistics once per episode                                                                                                             
+                             
+  Update counters immediately when an episode ends                                                                                                               
+                          
+  No recomputation over past episodes                                                                                                                                               
+  Track per-episode values for charting                                                                                                                                                
+  Append the current value of each incremental metric to a lightweight list once per episode                                                                     
+                           
+  These lists should contain only primitive values (floats/ints), not objects                                                                                    
+                       
+  Use these lists as the sole input for chart generation                                                                                                         
+                 
+  Modify chart generation to use incremental metric histories                                                                                                    
+                           
+  Charts must not iterate over historical episode objects                                                                                                        
+          
+  Charts should read directly from the per-episode metric value lists                                                                                            
+                            
+  Explicitly release pygame resources                                                                                                                                              
+  Call pygame.display.quit() when rendering ends                                                                                                                 
+                       
+  Call pygame.quit() at program shutdown                                                                                                                                               
+  Ensure no surfaces, fonts, or clocks are recreated inside per-episode loops                                                                                    
+     
+  Add garbage collection profiling                                                                                                                                                
+  Enable gc.set_debug(gc.DEBUG_STATS)                               
+  Log GC activity every N episodes                                                                                                                               
+                                
+  Verify GC frequency does not increase over time 
+
+
 
 
 
