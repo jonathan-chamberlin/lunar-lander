@@ -13,12 +13,19 @@ import logging
 import os
 import sys
 import time
+import warnings
+
+# Suppress warnings BEFORE importing libraries that generate them
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+# Suppress pygame "Hello from the pygame community" message
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
 # Force unbuffered stdout for real-time output display with UTF-8 encoding
 # (Windows console defaults to cp1252 which can't display Unicode symbols)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 import traceback
-import warnings
 from datetime import datetime
 from typing import Optional, Union
 
@@ -53,9 +60,6 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 logger = logging.getLogger(__name__)
-
-# Suppress warnings
-warnings.filterwarnings("ignore")
 
 
 # Module-level behavior analyzer instance
@@ -440,7 +444,17 @@ def main() -> None:
             # Episode manager for tracking per-environment state
             episode_manager = EpisodeManager(config.run.num_envs)
 
+            # Stop signal file for external termination
+            stop_file = os.path.join(script_dir, ".stop_simulation")
+
             while completed_episodes < config.run.num_episodes and not user_quit:
+                # Check for external stop signal
+                if os.path.exists(stop_file):
+                    logger.info("Stop signal received, shutting down gracefully...")
+                    os.remove(stop_file)  # Acknowledge receipt
+                    user_quit = True
+                    break
+
                 # Periodic maintenance to prevent memory issues
                 if completed_episodes > 0 and completed_episodes % MAINTENANCE_INTERVAL == 0:
                     # Pump pygame events to prevent "Out of memory" errors

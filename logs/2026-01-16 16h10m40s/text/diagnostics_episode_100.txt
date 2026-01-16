@@ -1,0 +1,144 @@
+
+================================================================================
+TRAINING DIAGNOSTICS SUMMARY
+================================================================================
+
+--- REWARD STATISTICS ---
+Total episodes: 100
+Successes: 0
+Success rate: 0.0%
+Mean reward: -559.96
+Max reward: -20.70
+Min reward: -1291.41
+Final 50 episodes mean reward: -499.05
+
+--- ADVANCED STATISTICS ---
+Env reward: mean=-564.1, std=241.9, range=[-1286.8, -54.0]
+First success (env >= 200): not yet achieved
+Near misses (180-199): 0 episodes
+Rolling success rate (last 50): 0.0%
+Rolling success rate (last 100): 0.0%
+Last 100 vs overall: env_reward -564.1 vs -564.1 (→)
+Max streak (last 200 episodes): 0
+
+--- ACTION STATISTICS ---
+Action tracking disabled for memory efficiency
+
+--- TRAINING METRICS ---
+Mean Q-value: -20.005
+Mean actor loss: 19.3580
+Mean critic loss: 2.0407
+Mean actor gradient norm: 0.0033
+Mean critic gradient norm: 3.4709
+
+Episodes with high actor loss (>1.0): 7/7
+
+--- BEHAVIOR ANALYSIS ---
+Episodes analyzed: 100
+
+  OUTCOME DISTRIBUTION:
+    LANDED          0 (  0.0%)
+    CRASHED        78 ( 78.0%)
+    TIMED_OUT       0 (  0.0%)
+    FLEW_OFF       21 ( 21.0%)
+
+  OUTCOME DETAILS:
+    CRASHED_SPINNING           44 ( 44.0%)
+    TOUCHED_DOWN_ONE_LEG       32 ( 32.0%)
+    FLEW_OFF_RIGHT_TILTED      18 ( 18.0%)
+    FLEW_OFF_LEFT_TILTED        3 (  3.0%)
+    LANDED_HARD                 1 (  1.0%)
+    SUSTAINED_BOUNCING          1 (  1.0%)
+    CRASHED_SIDEWAYS            1 (  1.0%)
+
+  CRASH TYPE BREAKDOWN:
+    CRASHED_SPINNING          56.4%
+    TOUCHED_DOWN_ONE_LEG      41.0%
+    LANDED_HARD                1.3%
+    CRASHED_SIDEWAYS           1.3%
+    LANDED_TILTED              0.0%
+    CRASHED_HIGH_VELOCITY      0.0%
+    CRASHED_TILTED             0.0%
+    CRASHED_OTHER              0.0%
+
+  TOP 15 BEHAVIORS:
+    PROGRESSIVE_TILT               98 ( 98.0%)
+    SPIRAL_DESCENT                 93 ( 93.0%)
+    EXCEEDED_SPIN_RATE             93 ( 93.0%)
+    SHORT_EPISODE                  92 ( 92.0%)
+    FLIPPED_OVER                   91 ( 91.0%)
+    DIRECT_APPROACH                89 ( 89.0%)
+    RAPID_DESCENT                  86 ( 86.0%)
+    STALLED_THEN_FELL              85 ( 85.0%)
+    REACHED_LOW_ALTITUDE           84 ( 84.0%)
+    MAIN_THRUST_NONE               82 ( 82.0%)
+    FREEFALL                       80 ( 80.0%)
+    SMOOTH_THRUST                  78 ( 78.0%)
+    HEAVY_RIGHT_TILT               74 ( 74.0%)
+    SIDE_THRUST_LEFT_BIAS          64 ( 64.0%)
+    NO_CONTACT_MADE                57 ( 57.0%)
+
+  FLIGHT QUALITY METRICS:
+    Stayed upright:            1.0%
+    Stayed centered:          45.0%
+    Controlled descent:        4.0%
+    Controlled throughout:     0.0%
+    Never stabilized:         44.0%
+
+  PROGRESS INDICATORS:
+    Reached low altitude:     84.0%
+    Made leg contact:         43.0%
+    Clean touchdown:           5.0%
+
+  QUALITY SUMMARY:
+    Runs with good behaviors:  99.0%
+    Runs with bad behaviors:  100.0%
+
+  BATCH TRENDS (per 50 episodes):
+    Batch     Success%   Landed%  Crashed%      SPS      UPS
+    -------- --------- --------- --------- -------- --------
+
+  BEHAVIOR CORRELATION WITH SUCCESS:
+    Behavior                       In Success   In Failure    Delta
+    ---------------------------- ------------ ------------ --------
+    RAPID_DESCENT                        0.0%        86.0%   -86.0%
+    REACHED_LOW_ALTITUDE                 0.0%        84.0%   -84.0%
+    SMOOTH_THRUST                        0.0%        78.0%   -78.0%
+    NO_CONTACT_MADE                      0.0%        57.0%   -57.0%
+    STAYED_CENTERED                      0.0%        45.0%   -45.0%
+    NEVER_STABILIZED                     0.0%        44.0%   -44.0%
+    ERRATIC_THRUST                       0.0%        18.0%   -18.0%
+    STABLE_ALTITUDE                      0.0%        15.0%   -15.0%
+    TOUCHED_DOWN_CLEAN                   0.0%         5.0%    -5.0%
+    CONTROLLED_DESCENT                   0.0%         4.0%    -4.0%
+    STAYED_UPRIGHT                       0.0%         1.0%    -1.0%
+    CONTROLLED_THROUGHOUT                0.0%         0.0%     0.0%
+
+--- CONSECUTIVE SUCCESS STREAK ---
+Max streak: 0 (achieved at episode 0)
+Current streak: 0
+  No significant streaks (5+) have been broken yet
+
+--- ENV REWARD DISTRIBUTION (LANDINGS) ---
+  Total landings: 33
+  Mean env_reward: -496.3 (std: 250.3)
+  Range: -836.3 to -54.0
+
+  ENV REWARD BREAKDOWN:
+    >= 200 (SUCCESS):       0 (  0.0%)
+    180-199 (near miss):    0 (  0.0%)
+    150-179:                0 (  0.0%)
+    < 150:                 33 (100.0%)
+
+--- LAST 5 EPISODES DETAIL ---
+  Episode 96: TOUCHED_DOWN_ONE_LEG - FAILURE - reward=-129.9 (env=-138.2, shaped=+8.3), duration=0.5s
+  Episode 97: CRASHED_SPINNING - FAILURE - reward=-350.9 (env=-353.3, shaped=+2.4), duration=0.4s
+  Episode 98: TOUCHED_DOWN_ONE_LEG - FAILURE - reward=-697.1 (env=-705.1, shaped=+8.0), duration=0.5s
+  Episode 99: CRASHED_SPINNING - FAILURE - reward=-356.6 (env=-360.3, shaped=+3.7), duration=0.3s
+  Episode 100: CRASHED_SPINNING - FAILURE - reward=-327.1 (env=-326.9, shaped=-0.1), duration=0.5s
+
+Data points collected: 100 episodes, 7 training logs
+
+================================================================================
+END OF DIAGNOSTICS
+================================================================================
