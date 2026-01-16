@@ -85,8 +85,8 @@ def run_periodic_diagnostics(
         # HUMAN mode: full verbose diagnostics
         reporter.print_summary()
     elif output.is_agent_mode():
-        # AGENT mode: compact structured summary
-        output.print_periodic_summary(completed_episodes)
+        # AGENT mode: detailed structured summary with deltas
+        output.print_periodic_summary(completed_episodes, tracker=diagnostics)
     # SILENT mode: no output
 
     # Save diagnostics text to file (always, regardless of mode)
@@ -678,16 +678,15 @@ def main() -> None:
                 error_occurred=error_occurred,
                 elapsed_time=elapsed_time,
                 total_steps=total_steps,
-                training_steps=trainer.training_steps
+                training_steps=trainer.training_steps,
+                tracker=diagnostics
             )
 
-            # Print diagnostics summary (mode-aware)
+            # Print full diagnostics summary for HUMAN mode
             try:
                 if output.is_verbose():
                     reporter.print_summary()
-                elif output.is_agent_mode():
-                    # Final agent-mode summary already printed above
-                    pass
+                # AGENT mode: detailed summary already printed in print_final_summary
             except Exception as e:
                 logger.error(f"Failed to print full diagnostics: {e}")
                 # Try minimal diagnostics (only in non-silent mode)

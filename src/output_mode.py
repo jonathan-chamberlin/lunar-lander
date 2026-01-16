@@ -9,12 +9,13 @@ across the simulation. It supports three modes:
 The simulation behavior is identical across all modes - only output differs.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Optional, List, Dict, Any
 
 if TYPE_CHECKING:
     from analysis.behavior_analysis import BehaviorReport
+    from analysis.diagnostics import DiagnosticsTracker
 
 
 class PrintMode(Enum):
@@ -22,6 +23,29 @@ class PrintMode(Enum):
     HUMAN = "human"    # Verbose, narrative output with emojis
     AGENT = "agent"    # Minimal, structured output for LLMs
     SILENT = "silent"  # No console output
+
+
+@dataclass
+class CheckpointSnapshot:
+    """Snapshot of key metrics at a checkpoint for delta calculation."""
+    episode: int = 0
+    success_rate: float = 0.0
+    mean_reward: float = 0.0
+    landed_pct: float = 0.0
+    crashed_pct: float = 0.0
+    max_streak: int = 0
+
+    # Quality metrics
+    upright_rate: float = 0.0
+    centered_rate: float = 0.0
+    controlled_descent_rate: float = 0.0
+    contact_rate: float = 0.0
+    clean_touchdown_rate: float = 0.0
+
+    # Training metrics
+    mean_q_value: float = 0.0
+    actor_loss: float = 0.0
+    critic_loss: float = 0.0
 
 
 @dataclass
@@ -54,6 +78,9 @@ class AgentModeStats:
     # Exponential moving averages (alpha=0.1 for smoothing)
     ema_reward: Optional[float] = None
     ema_success_rate: Optional[float] = None
+
+    # Previous checkpoint for delta calculation
+    prev_checkpoint: Optional[CheckpointSnapshot] = None
 
     def record_episode(
         self,
@@ -146,6 +173,35 @@ class AgentModeStats:
         self.timed_out_count = 0
 
         return stats
+
+
+def _fmt_delta(current: float, previous: float, fmt: str = ".0f", suffix: str = "") -> str:
+    """Format a delta value with sign indicator.
+
+    Args:
+        current: Current value
+        previous: Previous value
+        fmt: Format string for the delta
+        suffix: Suffix to add (e.g., '%')
+
+    Returns:
+        Formatted delta string like "(+5%)" or "(-3)"
+    """
+    delta = current - previous
+    if abs(delta) < 0.5:  # Effectively no change
+        return ""
+    sign = "+" if delta > 0 else ""
+    return f"({sign}{delta:{fmt}}{suffix})"
+
+
+def _fmt_trend(current: float, previous: float) -> str:
+    """Get trend arrow based on change direction."""
+    delta = current - previous
+    if delta > 2:
+        return "^"
+    elif delta < -2:
+        return "v"
+    return "="
 
 
 class OutputController:
@@ -241,33 +297,249 @@ class OutputController:
             return False
         return episode_num > 0 and episode_num % self._summary_interval == 0
 
-    def print_periodic_summary(self, episode_num: int) -> None:
+    def print_periodic_summary(
+        self,
+        episode_num: int,
+        tracker: Optional['DiagnosticsTracker'] = None
+    ) -> None:
         """Print a periodic summary based on current mode.
 
         For HUMAN mode, this is handled by reporter.print_summary().
-        For AGENT mode, this prints a compact structured block.
+        For AGENT mode, this prints a detailed structured block with deltas.
 
         Args:
             episode_num: Current episode number
+            tracker: DiagnosticsTracker for detailed statistics (optional for agent mode)
         """
         if self.mode == PrintMode.SILENT:
             return
 
         if self.mode == PrintMode.AGENT:
-            stats = self.agent_stats.get_period_stats()
-            if not stats:
-                return
-
-            # Compact structured output for agent consumption
-            print(f"--- Summary @ {episode_num} ---")
-            print(f"Period: n={stats['n']} succ={stats['success_rate']:.0f}% reward={stats['mean_reward']:.0f}[{stats['min_reward']:.0f},{stats['max_reward']:.0f}]")
-            print(f"Outcomes: land={stats['landed_pct']:.0f}% crash={stats['crashed_pct']:.0f}% timeout={stats['timed_out_pct']:.0f}%")
-            print(f"Overall: {stats['total_episodes']}ep succ={stats['total_success_rate']:.0f}% streak={stats['current_streak']}/{stats['max_streak']}")
-            print(f"EMA: reward={stats['ema_reward']:.0f} succ={stats['ema_success_rate']:.0f}%")
+            self._print_agent_detailed_summary(episode_num, tracker)
             return
 
         # HUMAN mode: handled externally by reporter.print_summary()
         pass
+
+    def _print_agent_detailed_summary(
+        self,
+        episode_num: int,
+        tracker: Optional['DiagnosticsTracker'] = None
+    ) -> None:
+        """Print detailed agent mode summary with tiered structure and deltas.
+
+        Args:
+            episode_num: Current episode number
+            tracker: DiagnosticsTracker for detailed statistics
+        """
+        period_stats = self.agent_stats.get_period_stats()
+        if not period_stats:
+            return
+
+        prev = self.agent_stats.prev_checkpoint
+
+        # === QUICK SUMMARY (4 lines) ===
+        print(f"--- Summary @ {episode_num} ---")
+        print(f"Period: n={period_stats['n']} succ={period_stats['success_rate']:.0f}% reward={period_stats['mean_reward']:.0f}[{period_stats['min_reward']:.0f},{period_stats['max_reward']:.0f}]")
+        print(f"Outcomes: land={period_stats['landed_pct']:.0f}% crash={period_stats['crashed_pct']:.0f}% timeout={period_stats['timed_out_pct']:.0f}%")
+        print(f"Overall: {period_stats['total_episodes']}ep succ={period_stats['total_success_rate']:.0f}% streak={period_stats['current_streak']}/{period_stats['max_streak']}")
+        print(f"EMA: reward={period_stats['ema_reward']:.0f} succ={period_stats['ema_success_rate']:.0f}%")
+
+        # === DETAILED SECTIONS (from tracker if available) ===
+        if tracker is None:
+            self._save_checkpoint(episode_num, period_stats, None)
+            return
+
+        summary = tracker.get_summary()
+        adv_stats = tracker.get_advanced_statistics()
+        behavior_stats = tracker.get_behavior_statistics()
+        streak_stats = tracker.get_streak_statistics()
+
+        # [METRICS] section
+        print(f"\n[METRICS]")
+
+        # Reward metrics with deltas
+        reward_delta = _fmt_delta(summary.mean_reward, prev.mean_reward if prev else 0, ".0f") if prev else ""
+        print(f"reward: mean={summary.mean_reward:.0f}{reward_delta} std={adv_stats.get('env_reward', {}).get('std', 0):.0f} max={summary.max_reward:.0f} min={summary.min_reward:.0f}", end="")
+        if summary.final_50_mean_reward is not None:
+            print(f" l50={summary.final_50_mean_reward:.0f}")
+        else:
+            print()
+
+        # Success metrics
+        first_success = adv_stats.get('first_success_episode', 'N/A')
+        near_misses = adv_stats.get('near_misses', {}).get('count', 0)
+        succ_delta = _fmt_delta(summary.success_rate * 100, prev.success_rate if prev else 0, ".0f", "%") if prev else ""
+        print(f"success: n={summary.num_successes} rate={summary.success_rate*100:.0f}%{succ_delta} first@ep{first_success} nearMiss={near_misses}")
+
+        # Streak metrics
+        streak_delta = _fmt_delta(streak_stats['max_streak'], prev.max_streak if prev else 0, ".0f") if prev else ""
+        print(f"streaks: cur={streak_stats['current_streak']} max={streak_stats['max_streak']}{streak_delta}@ep{streak_stats['max_streak_episode']}")
+
+        # [OUTCOMES] section - show top outcome types
+        print(f"\n[OUTCOMES]")
+        if behavior_stats:
+            sorted_outcomes = sorted(behavior_stats.outcome_counts.items(), key=lambda x: -x[1])
+            outcome_parts = [f"{o}={c}" for o, c in sorted_outcomes[:6]]
+            print(" ".join(outcome_parts))
+
+            # Crash breakdown if crashes exist
+            if behavior_stats.crash_type_distribution:
+                crash_parts = [f"{t}={p:.0f}%" for t, p in sorted(
+                    behavior_stats.crash_type_distribution.items(), key=lambda x: -x[1]
+                )[:4]]
+                print(f"crashes: {' '.join(crash_parts)}")
+
+        # [QUALITY] section
+        print(f"\n[QUALITY]")
+        if behavior_stats:
+            # Flight quality with deltas
+            upright = behavior_stats.stayed_upright_rate
+            centered = behavior_stats.stayed_centered_rate
+            ctrl_desc = behavior_stats.controlled_descent_rate
+            ctrl_thru = behavior_stats.controlled_throughout_rate
+
+            upright_d = _fmt_delta(upright, prev.upright_rate if prev else 0, ".0f", "%") if prev else ""
+            centered_d = _fmt_delta(centered, prev.centered_rate if prev else 0, ".0f", "%") if prev else ""
+            ctrl_desc_d = _fmt_delta(ctrl_desc, prev.controlled_descent_rate if prev else 0, ".0f", "%") if prev else ""
+
+            print(f"upright={upright:.0f}%{upright_d} centered={centered:.0f}%{centered_d} ctrlDesc={ctrl_desc:.0f}%{ctrl_desc_d} ctrlThru={ctrl_thru:.0f}%")
+
+            # Progress indicators with deltas
+            low_alt = behavior_stats.low_altitude_rate
+            contact = behavior_stats.contact_rate
+            clean_td = behavior_stats.clean_touchdown_rate
+
+            contact_d = _fmt_delta(contact, prev.contact_rate if prev else 0, ".0f", "%") if prev else ""
+            clean_td_d = _fmt_delta(clean_td, prev.clean_touchdown_rate if prev else 0, ".0f", "%") if prev else ""
+
+            print(f"lowAlt={low_alt:.0f}% contact={contact:.0f}%{contact_d} cleanTD={clean_td:.0f}%{clean_td_d}")
+            print(f"goodBehavior={behavior_stats.good_behavior_rate:.0f}% badBehavior={behavior_stats.bad_behavior_rate:.0f}%")
+
+        # [TRAINING] section
+        print(f"\n[TRAINING]")
+        if summary.mean_q_value is not None:
+            q_delta = _fmt_delta(summary.mean_q_value, prev.mean_q_value if prev else 0, ".1f") if prev else ""
+            q_trend = ""
+            if summary.q_value_trend:
+                q_trend = f"(trend:{summary.q_value_trend[0]:.1f}->{summary.q_value_trend[1]:.1f})"
+            print(f"Q={summary.mean_q_value:.1f}{q_delta}{q_trend} aLoss={summary.mean_actor_loss:.3f} cLoss={summary.mean_critic_loss:.3f}")
+            print(f"aGrad={summary.mean_actor_grad_norm:.2f} cGrad={summary.mean_critic_grad_norm:.2f} highLoss={sum(1 for x in tracker.actor_losses if x > 1.0)}/{len(tracker.actor_losses)}")
+        else:
+            print("No training data yet")
+
+        # [BATCH_PROGRESS] section - show per-batch trends
+        print(f"\n[BATCH_PROGRESS]")
+        if behavior_stats and len(behavior_stats.batch_success_rates) > 0:
+            # Show batch-by-batch progress (50 episodes each)
+            batch_size = 50
+            num_batches = len(behavior_stats.batch_success_rates)
+
+            for i in range(num_batches):
+                batch_start = i * batch_size + 1
+                batch_end = min((i + 1) * batch_size, behavior_stats.total_episodes)
+                succ = behavior_stats.batch_success_rates[i]
+                outcome_dist = behavior_stats.batch_outcome_distributions[i]
+                landed = outcome_dist.get('landed', 0)
+                crashed = outcome_dist.get('crashed', 0)
+
+                # Include speed metrics if available
+                speed_str = ""
+                if i < len(tracker.batch_speed_metrics):
+                    speed = tracker.batch_speed_metrics[i]
+                    speed_str = f" SPS={speed.sps:.0f}"
+
+                print(f"{batch_start}-{batch_end}: succ={succ:.0f}% land={landed:.0f}% crash={crashed:.0f}%{speed_str}")
+
+        # [DELTA] section - highlight significant changes
+        if prev:
+            print(f"\n[DELTA from @{prev.episode}]")
+            improvements = []
+            regressions = []
+
+            # Check each metric for significant change (>3% or >3 units)
+            checks = [
+                ('success', summary.success_rate * 100, prev.success_rate, '%'),
+                ('reward', summary.mean_reward, prev.mean_reward, ''),
+                ('landed', period_stats['landed_pct'], prev.landed_pct, '%'),
+                ('crashed', period_stats['crashed_pct'], prev.crashed_pct, '%'),  # Lower is better
+            ]
+
+            if behavior_stats:
+                checks.extend([
+                    ('upright', behavior_stats.stayed_upright_rate, prev.upright_rate, '%'),
+                    ('centered', behavior_stats.stayed_centered_rate, prev.centered_rate, '%'),
+                    ('ctrlDesc', behavior_stats.controlled_descent_rate, prev.controlled_descent_rate, '%'),
+                    ('contact', behavior_stats.contact_rate, prev.contact_rate, '%'),
+                    ('cleanTD', behavior_stats.clean_touchdown_rate, prev.clean_touchdown_rate, '%'),
+                ])
+
+            for name, current, previous, suffix in checks:
+                delta = current - previous
+                threshold = 3 if suffix == '%' else 5
+
+                # For 'crashed', improvement is negative delta
+                is_better = delta < -threshold if name == 'crashed' else delta > threshold
+                is_worse = delta > threshold if name == 'crashed' else delta < -threshold
+
+                if is_better:
+                    sign = "-" if name == 'crashed' else "+"
+                    improvements.append(f"{name}{sign}{abs(delta):.0f}{suffix}")
+                elif is_worse:
+                    sign = "+" if name == 'crashed' else ""
+                    regressions.append(f"{name}{sign}{delta:.0f}{suffix}")
+
+            if improvements:
+                print(f"IMPROVED: {' '.join(improvements)}")
+            if regressions:
+                print(f"REGRESSED: {' '.join(regressions)}")
+            if not improvements and not regressions:
+                print("STABLE: no significant changes")
+
+        # Save current as checkpoint for next comparison
+        self._save_checkpoint(episode_num, period_stats, tracker)
+
+    def _save_checkpoint(
+        self,
+        episode_num: int,
+        period_stats: Dict[str, Any],
+        tracker: Optional['DiagnosticsTracker']
+    ) -> None:
+        """Save current metrics as checkpoint for delta calculation.
+
+        Args:
+            episode_num: Current episode number
+            period_stats: Period statistics from agent_stats
+            tracker: DiagnosticsTracker for additional metrics
+        """
+        checkpoint = CheckpointSnapshot(episode=episode_num)
+
+        # Basic metrics from period stats
+        checkpoint.success_rate = period_stats.get('total_success_rate', 0)
+        checkpoint.mean_reward = period_stats.get('mean_reward', 0)
+        checkpoint.landed_pct = period_stats.get('landed_pct', 0)
+        checkpoint.crashed_pct = period_stats.get('crashed_pct', 0)
+        checkpoint.max_streak = period_stats.get('max_streak', 0)
+
+        if tracker:
+            summary = tracker.get_summary()
+            behavior_stats = tracker.get_behavior_statistics()
+
+            checkpoint.mean_reward = summary.mean_reward
+
+            if summary.mean_q_value is not None:
+                checkpoint.mean_q_value = summary.mean_q_value
+                checkpoint.actor_loss = summary.mean_actor_loss
+                checkpoint.critic_loss = summary.mean_critic_loss
+
+            if behavior_stats:
+                checkpoint.upright_rate = behavior_stats.stayed_upright_rate
+                checkpoint.centered_rate = behavior_stats.stayed_centered_rate
+                checkpoint.controlled_descent_rate = behavior_stats.controlled_descent_rate
+                checkpoint.contact_rate = behavior_stats.contact_rate
+                checkpoint.clean_touchdown_rate = behavior_stats.clean_touchdown_rate
+
+        self.agent_stats.prev_checkpoint = checkpoint
 
     def print_training_started(self, episode_num: int, buffer_size: int) -> None:
         """Print training started message.
@@ -292,7 +564,8 @@ class OutputController:
         error_occurred: Optional[str],
         elapsed_time: Optional[float],
         total_steps: int,
-        training_steps: int
+        training_steps: int,
+        tracker: Optional['DiagnosticsTracker'] = None
     ) -> None:
         """Print final training summary.
 
@@ -302,19 +575,25 @@ class OutputController:
             elapsed_time: Total elapsed time in seconds
             total_steps: Total environment steps
             training_steps: Total training updates
+            tracker: DiagnosticsTracker for detailed final stats (optional)
         """
         if self.mode == PrintMode.SILENT:
             return
 
         if self.mode == PrintMode.AGENT:
             status = "ERROR" if error_occurred else "DONE"
-            print(f"=== {status}: {completed_episodes}ep ===")
+            print(f"\n=== {status}: {completed_episodes}ep ===")
             if elapsed_time and elapsed_time > 0:
                 sps = total_steps / elapsed_time
                 ups = training_steps / elapsed_time
                 print(f"Time={elapsed_time:.0f}s SPS={sps:.0f} UPS={ups:.0f}")
             if error_occurred:
                 print(f"Error: {error_occurred}")
+
+            # Print final detailed summary if tracker available
+            if tracker and completed_episodes > 0:
+                # Force a final summary print
+                self._print_agent_detailed_summary(completed_episodes, tracker)
             return
 
         # HUMAN mode: verbose output
