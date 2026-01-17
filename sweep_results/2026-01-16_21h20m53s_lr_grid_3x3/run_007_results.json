@@ -1,0 +1,12 @@
+{
+  "run_name": "run_007",
+  "total_episodes": 500,
+  "success_rate": 0.0,
+  "mean_reward": -145.2052010421753,
+  "std_reward": 80.65117695996419,
+  "max_reward": -8.562828063964844,
+  "min_reward": -822.06640625,
+  "first_success_episode": null,
+  "final_100_success_rate": 0.0,
+  "elapsed_time": 1467.5511181354523
+}

@@ -52,7 +52,11 @@ The project uses Python 3.12.5 with a virtual environment at `.venv-3.12.5/`.
 source .venv-3.12.5/bin/activate
 ```
 
-### Installing Dependencies
+### Installing Dependencies (Initial Setup Only)
+
+**Dependencies are already installed in `.venv-3.12.5/`. Do NOT run pip install.**
+
+Only run this if setting up a fresh environment from scratch:
 
 ```bash
 python -m pip install torch gymnasium pygame numpy matplotlib box2d

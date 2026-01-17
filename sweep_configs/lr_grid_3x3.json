@@ -1,0 +1,10 @@
+{
+  "name": "lr_grid_3x3",
+  "description": "3x3 grid search over actor and critic learning rates. Run twice for 2 replications.",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "parameters": {
+    "actor_lr": [0.0003, 0.001, 0.003],
+    "critic_lr": [0.0006, 0.002, 0.006]
+  }
+}
