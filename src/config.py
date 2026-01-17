@@ -82,15 +82,15 @@ class TrainingConfig:
     gamma: float = 0.99
     tau: float = 0.005
     batch_size: int = 128  # Reduced from 256 for faster iterations
-    buffer_size: int = 1 << 14  # 16384 (reduced from 65536 for cache locality)
-    min_experiences_before_training: int = 2000  # Reduced from 5000
+    buffer_size: int = 100000  # Standard TD3 buffer size for experience diversity
+    min_experiences_before_training: int = 10000  # More diverse initial experiences
     training_updates_per_episode: int = 25  # Reduced from 50
     gradient_clip_value: float = 10.0
 
     # TD3-specific parameters
     policy_update_frequency: int = 3
-    target_policy_noise: float = 0.1
-    target_noise_clip: float = 0.3
+    target_policy_noise: float = 0.2  # Standard TD3 value (was 0.1)
+    target_noise_clip: float = 0.5  # Standard TD3 value (was 0.3)
 
     # Prioritized Experience Replay parameters
     use_per: bool = True  # Enable PER for faster learning
@@ -105,8 +105,8 @@ class NoiseConfig:
     """Ornstein-Uhlenbeck noise parameters."""
 
     mu: Tuple[float, float] = (0.0, 0.0)
-    sigma: float = 0.3
-    theta: float = 0.2
+    sigma: float = 0.5  # Increased for better exploration (was 0.3)
+    theta: float = 0.15  # Slightly reduced for smoother noise
     dt: float = 0.01
     x0: float = 0.0
     action_dimensions: int = 2

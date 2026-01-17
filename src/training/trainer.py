@@ -86,21 +86,18 @@ class TD3Trainer:
         hard_update(self.critic_1, self.target_critic_1)
         hard_update(self.critic_2, self.target_critic_2)
 
-        # Initialize optimizers with weight decay for regularization
+        # Initialize optimizers (no weight decay - not recommended for RL)
         self.actor_optimizer = optim.Adam(
             self.actor.parameters(),
-            lr=training_config.actor_lr,
-            weight_decay=1e-5
+            lr=training_config.actor_lr
         )
         self.critic_1_optimizer = optim.Adam(
             self.critic_1.parameters(),
-            lr=training_config.critic_lr,
-            weight_decay=1e-5
+            lr=training_config.critic_lr
         )
         self.critic_2_optimizer = optim.Adam(
             self.critic_2.parameters(),
-            lr=training_config.critic_lr,
-            weight_decay=1e-5
+            lr=training_config.critic_lr
         )
 
         # Learning rate schedulers - decay to 20% of initial LR over training
@@ -167,8 +164,9 @@ class TD3Trainer:
             td_errors = T.abs(current_q1 - target_q_value).squeeze(-1)
 
         # Compute weighted critic losses (importance sampling for PER)
-        elementwise_loss_1 = F.smooth_l1_loss(current_q1, target_q_value, reduction='none')
-        elementwise_loss_2 = F.smooth_l1_loss(current_q2, target_q_value, reduction='none')
+        # Use MSE loss (standard for TD3) instead of Smooth L1 for stronger gradients
+        elementwise_loss_1 = F.mse_loss(current_q1, target_q_value, reduction='none')
+        elementwise_loss_2 = F.mse_loss(current_q2, target_q_value, reduction='none')
         critic_loss_1 = (elementwise_loss_1 * weights).mean()
         critic_loss_2 = (elementwise_loss_2 * weights).mean()
 
