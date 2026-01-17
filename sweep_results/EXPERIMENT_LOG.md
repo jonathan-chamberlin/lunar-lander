@@ -196,9 +196,110 @@ NEXT STEPS
 - [x] Execute sweep 2
 - [x] Analyze combined results
 - [x] Update conclusion
-- [ ] Run 1000+ episode experiments with conservative LRs (0.0003/0.0006)
+- [x] Run 1000+ episode experiments with conservative LRs (see Experiment 2)
 - [ ] Investigate other hyperparameters (exploration noise, batch size)
 - [ ] Consider whether the TD3 implementation has bugs affecting learning
+
+---
+
+### Experiment 2: Ultra-Conservative Learning Rates (1500 episodes)
+
+**Sweep directory:** `sweep_results/2026-01-17_01h08m53s_lr_conservative_1500ep/`
+
+───────────────────────────────────────────────────────────────────────
+HYPOTHESIS
+───────────────────────────────────────────────────────────────────────
+Based on Experiment 1's finding that conservative learning rates (0.0003/0.0006) showed most promise, we hypothesize that:
+
+1. Even more conservative learning rates (0.0001/0.0002) may enable stable learning
+2. With 1500 episodes (3× longer training), the agent will achieve meaningful success rates
+3. The learning rate configuration is the primary bottleneck preventing learning
+
+**Null hypothesis:** Learning rate tuning alone cannot achieve reliable learning on LunarLander.
+
+───────────────────────────────────────────────────────────────────────
+CONFIGURATION
+───────────────────────────────────────────────────────────────────────
+- Type: grid
+- Episodes per run: 1500
+- Runs per config: 1
+- Total runs: 4
+
+**Parameters:**
+| Parameter | Values | Rationale |
+|-----------|--------|-----------|
+| actor_lr | 0.0001, 0.0003 | Ultra-conservative range based on Experiment 1 |
+| critic_lr | 0.0002, 0.0006 | Ultra-conservative range based on Experiment 1 |
+
+**Ratio coverage:**
+|  | actor=0.0001 | actor=0.0003 |
+|--|--------------|--------------|
+| **critic=0.0002** | 2:1 | 0.67:1 |
+| **critic=0.0006** | 6:1 | 2:1 |
+
+───────────────────────────────────────────────────────────────────────
+RESULTS
+───────────────────────────────────────────────────────────────────────
+
+| actor_lr | critic_lr | Ratio | Success% | Final100% | Mean Reward | Max Reward | Time(s) |
+|----------|-----------|-------|----------|-----------|-------------|------------|---------|
+| 0.0001 | 0.0002 | 2:1 | 0.0% | 0% | -109.6 | 47.0 | 4126 |
+| 0.0001 | 0.0006 | 6:1 | 0.0% | 0% | -107.3 | 47.0 | 4230 |
+| 0.0003 | 0.0002 | 0.67:1 | 0.0% | 0% | -115.8 | -16.2 | 4548 |
+| 0.0003 | 0.0006 | 2:1 | 0.0% | 0% | -130.0 | 14.6 | 3406 |
+
+**All configurations achieved 0% success rate despite 1500 episodes.**
+
+**Heat map by mean reward:**
+```
+           critic=0.0002  critic=0.0006
+actor=0.0001   -109.6        -107.3  ← best
+actor=0.0003   -115.8        -130.0  ← worst
+```
+
+**Observations:**
+- Lower actor_lr (0.0001) consistently outperformed 0.0003
+- Max rewards of ~47 for actor_lr=0.0001 configs indicate near-landing behavior but never crossing the 200 threshold
+- Mean rewards improved vs 500-episode runs (~-110 vs ~-170) but no successful landings
+
+───────────────────────────────────────────────────────────────────────
+CONCLUSION
+───────────────────────────────────────────────────────────────────────
+**Hypothesis supported?** No
+
+The null hypothesis is supported: **Learning rate tuning alone cannot achieve reliable learning.** Even with:
+- Ultra-conservative learning rates (10× lower than literature defaults)
+- Extended training (1500 episodes, 3× longer than Experiment 1)
+- Multiple learning rate ratios tested
+
+...the agent achieved 0% success rate across all configurations.
+
+**Key findings:**
+1. **Learning rate is NOT the primary bottleneck** - extensive tuning produced no successes
+2. **Lower actor_lr (0.0001) is marginally better** than 0.0003 based on mean reward
+3. **The agent gets close but never succeeds** - max rewards of 47 vs success threshold of 200
+4. **Training length alone is insufficient** - 3× more episodes did not enable learning
+5. **The problem lies elsewhere** - likely TD3 implementation, exploration, or reward shaping
+
+**Recommended next steps:**
+- Stop tuning learning rates - diminishing returns
+- Investigate TD3 implementation for bugs
+- Review exploration noise parameters
+- Consider other hyperparameters (tau, batch_size, gamma)
+- Compare against known-working TD3 implementations
+
+**Limitations / caveats:**
+- Only 1 run per config (no variance estimates)
+- Did not test actor_lr < 0.0001 (likely too slow to learn)
+
+───────────────────────────────────────────────────────────────────────
+NEXT STEPS
+───────────────────────────────────────────────────────────────────────
+- [ ] Audit TD3 implementation against reference implementations
+- [ ] Test exploration noise parameters (noise_std, noise_clip)
+- [ ] Review tau (soft update coefficient) - currently may be too aggressive
+- [ ] Check gamma (discount factor) - ensure proper value function estimation
+- [ ] Consider testing PPO or SAC as baseline comparison
 
 ---
 
@@ -218,12 +319,13 @@ NEXT STEPS
 
 ## Running Summary of Best Known Configurations
 
-| Date | actor_lr | critic_lr | Ratio | Success Rate | Mean Reward | Source |
-|------|----------|-----------|-------|--------------|-------------|--------|
-| baseline | 0.001 | 0.002 | 2:1 | 0.0% | -182.3 | config.py defaults |
-| 2026-01-16 | 0.0003 | 0.0006 | 2:1 | 0.1% | -169.2 | Experiment 1 (tentative) |
+| Date | actor_lr | critic_lr | Ratio | Success Rate | Mean Reward | Episodes | Source |
+|------|----------|-----------|-------|--------------|-------------|----------|--------|
+| baseline | 0.001 | 0.002 | 2:1 | 0.0% | -182.3 | 500 | config.py defaults |
+| 2026-01-16 | 0.0003 | 0.0006 | 2:1 | 0.1% | -169.2 | 500 | Experiment 1 |
+| 2026-01-17 | 0.0001 | 0.0006 | 6:1 | 0.0% | -107.3 | 1500 | Experiment 2 |
 
-**Note:** All configurations tested so far have <1% success rate. The "best" configuration is only marginally better and needs validation with longer training runs.
+**Critical Finding:** After 22 runs across 13 configurations with 500-1500 episodes, no configuration achieved meaningful success. The best mean reward (-107.3) is still far from the success threshold (200). **Learning rate tuning is not the solution.**
 
 ---
 
@@ -232,18 +334,29 @@ NEXT STEPS
 ### Learning Rates
 - **Absolute magnitude matters more than ratio** - 2:1 at (0.003/0.006) is catastrophic, 2:1 at (0.0003/0.0006) is best
 - **High critic_lr (0.006) is consistently harmful** - especially when paired with high actor_lr
-- **Conservative learning rates (0.0003/0.0006) show most promise** but need longer training
+- **Ultra-conservative learning rates (0.0001) show best mean rewards** but still 0% success
 - Literature's "critic LR >= actor LR" guidance holds but magnitude is key
+- **Learning rate tuning has reached diminishing returns** - further tuning unlikely to help
 
 ### Interactions
 - **actor_lr × critic_lr interaction is significant** - cannot optimize independently
 - High actor_lr (0.003) + high critic_lr (0.006) = worst performance
-- Low actor_lr (0.0003) is relatively robust across critic_lr values
+- Low actor_lr (0.0001-0.0003) is relatively robust across critic_lr values
 
 ### Failed Approaches
 - **500 episodes is insufficient** for any configuration to learn reliably
+- **1500 episodes is also insufficient** - extended training did not enable learning
 - **Aggressive learning rates (0.003/0.006) consistently fail** - avoid these ranges
 - **Default baseline (0.001/0.002) underperforms** compared to conservative values
+- **Learning rate tuning alone cannot solve this problem** - other factors are limiting
+
+### Root Cause Investigation Needed
+The agent achieves max rewards of ~47 but never crosses the 200 threshold. Possible causes:
+1. **TD3 implementation bugs** - compare against reference implementations
+2. **Exploration strategy** - noise parameters may be suboptimal
+3. **Soft update coefficient (tau)** - may be too aggressive or too slow
+4. **Reward shaping** - environment reward structure may need modification
+5. **Network architecture** - current architecture may be insufficient
 
 ---
 
@@ -259,6 +372,9 @@ NEXT STEPS
 - 300 episodes: Can detect gross differences
 - 500 episodes: Reasonable for screening
 - 1000 episodes: High confidence in convergence behavior
+- 1500 episodes: Tested in Experiment 2 - still insufficient for TD3 to learn LunarLander
+
+**Note:** The issue is not training length - it's fundamental learning capability.
 
 ### Variance Considerations
 - Single runs have seed-dependent variance
