@@ -419,7 +419,12 @@ def main() -> None:
     output = OutputController.from_string(config.run.print_mode)
 
     logger.info(f"Starting TD3 training for {config.run.num_episodes} episodes")
-    logger.info(f"Using {config.run.num_envs} parallel environments")
+    if config.run.render_mode == 'all':
+        logger.info("Using single rendered environment (render_mode='all')")
+    elif config.run.render_mode == 'none':
+        logger.info(f"Using {config.run.num_envs} parallel environments (render_mode='none')")
+    else:
+        logger.info(f"Using mixed mode: {len(config.run.render_episodes)} rendered, rest use {config.run.num_envs} parallel envs")
     if not config.run.training_enabled:
         logger.warning("TRAINING DISABLED - running simulation only (for chart testing)")
 

@@ -1,0 +1,3 @@
+run_name,success_rate,mean_reward,max_reward,first_success_episode,final_100_success_rate,elapsed_time,parameters
+run_001,0.0,-177.49319926548003,197.63430786132812,,0.0,3982.1665320396423,"{""num_envs"": 1, ""actor_lr"": 0.0001, ""critic_lr"": 0.0006}"
+run_002,0.0,-89.77872513198852,157.70001220703125,,0.0,5078.211281776428,"{""num_envs"": 8, ""actor_lr"": 0.0001, ""critic_lr"": 0.0006}"

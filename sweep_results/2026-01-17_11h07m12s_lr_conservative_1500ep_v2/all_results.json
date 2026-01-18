@@ -1,0 +1,66 @@
+[
+  {
+    "run_name": "run_001",
+    "total_episodes": 1500,
+    "success_rate": 0.0,
+    "mean_reward": -800.8318152694702,
+    "std_reward": 239.397569178985,
+    "max_reward": 29.952293395996094,
+    "min_reward": -2194.25732421875,
+    "first_success_episode": null,
+    "final_100_success_rate": 0.0,
+    "elapsed_time": 467.6631643772125,
+    "parameters": {
+      "actor_lr": 0.0001,
+      "critic_lr": 0.0002
+    }
+  },
+  {
+    "run_name": "run_002",
+    "total_episodes": 1500,
+    "success_rate": 0.0,
+    "mean_reward": -180.09221955108643,
+    "std_reward": 98.52431363441664,
+    "max_reward": 168.39608764648438,
+    "min_reward": -910.7734985351562,
+    "first_success_episode": null,
+    "final_100_success_rate": 0.0,
+    "elapsed_time": 1256.8636348247528,
+    "parameters": {
+      "actor_lr": 0.0001,
+      "critic_lr": 0.0006
+    }
+  },
+  {
+    "run_name": "run_003",
+    "total_episodes": 1500,
+    "success_rate": 0.0,
+    "mean_reward": -494.8851867485046,
+    "std_reward": 169.35285722650912,
+    "max_reward": 25.30786895751953,
+    "min_reward": -1188.4327392578125,
+    "first_success_episode": null,
+    "final_100_success_rate": 0.0,
+    "elapsed_time": 655.2560846805573,
+    "parameters": {
+      "actor_lr": 0.0003,
+      "critic_lr": 0.0002
+    }
+  },
+  {
+    "run_name": "run_004",
+    "total_episodes": 1500,
+    "success_rate": 0.0,
+    "mean_reward": -1028.6464379145305,
+    "std_reward": 413.6695367706466,
+    "max_reward": 43.12890625,
+    "min_reward": -2842.078857421875,
+    "first_success_episode": null,
+    "final_100_success_rate": 0.0,
+    "elapsed_time": 453.04736852645874,
+    "parameters": {
+      "actor_lr": 0.0003,
+      "critic_lr": 0.0006
+    }
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "name": "noise_tau_4x4",
+  "description": "4x4 grid search over exploration noise (sigma) and soft update coefficient (tau)",
+  "type": "grid",
+  "episodes_per_run": 1000,
+  "parameters": {
+    "sigma": [0.1, 0.2, 0.3, 0.4],
+    "tau": [0.001, 0.005, 0.01, 0.02]
+  }
+}

@@ -24,7 +24,7 @@ class RunConfig:
     #   'none' - No episodes rendered (fastest training)
     #   'all'  - All episodes rendered (slowest, but visual feedback)
     #   'custom' - Only render episodes specified in render_episodes_custom
-    render_mode: str = 'all'  # Changed from 'all' for 50x speedup
+    render_mode: str = 'all'
     render_episodes_custom: Tuple[int, ...] = field(default_factory=tuple)
 
     # Internal field set by __post_init__ based on render_mode

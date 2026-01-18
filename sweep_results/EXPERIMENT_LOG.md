@@ -303,6 +303,137 @@ NEXT STEPS
 
 ---
 
+### Experiment 3: Buffer Size × Warmup Steps (1000 episodes)
+
+**Sweep directory:** `sweep_results/<timestamp>_buffer_warmup_grid_4x3/`
+
+───────────────────────────────────────────────────────────────────────
+HYPOTHESIS
+───────────────────────────────────────────────────────────────────────
+Learning quality depends on diverse, uncorrelated experiences. We hypothesize that:
+
+1. Larger buffer sizes provide more diverse experiences, reducing correlation between samples
+2. Longer warmup periods ensure the buffer is sufficiently filled before training begins
+3. The current defaults (buffer=16k, warmup=2k) may be insufficient for stable TD3 learning
+4. There may be an optimal buffer/warmup ratio that balances memory usage with learning quality
+
+**Null hypothesis:** Buffer size and warmup steps have minimal impact on learning performance.
+
+───────────────────────────────────────────────────────────────────────
+CONFIGURATION
+───────────────────────────────────────────────────────────────────────
+- Type: grid
+- Episodes per run: 1000
+- Runs per config: 1
+- Total runs: 12 (4 buffer × 3 warmup)
+
+**Parameters:**
+| Parameter | Values | Rationale |
+|-----------|--------|-----------|
+| buffer_size | 50k, 100k, 500k, 1M | 3× to 60× current default (16k) |
+| min_experiences_before_training | 1k, 10k, 25k | 0.5× to 12.5× current default (2k) |
+
+**Grid coverage:**
+|  | warmup=1k | warmup=10k | warmup=25k |
+|--|-----------|------------|------------|
+| **buffer=50k** | 2% fill | 20% fill | 50% fill |
+| **buffer=100k** | 1% fill | 10% fill | 25% fill |
+| **buffer=500k** | 0.2% fill | 2% fill | 5% fill |
+| **buffer=1M** | 0.1% fill | 1% fill | 2.5% fill |
+
+───────────────────────────────────────────────────────────────────────
+RESULTS
+───────────────────────────────────────────────────────────────────────
+[TO BE FILLED AFTER EXECUTION]
+
+| buffer_size | warmup | Success% | Final100% | Mean Reward | Time(s) |
+|-------------|--------|----------|-----------|-------------|---------|
+| ... | ... | ... | ... | ... | ... |
+
+───────────────────────────────────────────────────────────────────────
+CONCLUSION
+───────────────────────────────────────────────────────────────────────
+[TO BE FILLED AFTER EXECUTION]
+
+───────────────────────────────────────────────────────────────────────
+NEXT STEPS
+───────────────────────────────────────────────────────────────────────
+- [ ] Execute sweep
+- [ ] Analyze results
+- [ ] Update conclusion
+
+---
+
+### Experiment 4: Discount Factor (Gamma) Sweep
+
+**Sweep directory:** `sweep_results/[timestamp]_gamma_sweep_1x4/`
+
+───────────────────────────────────────────────────────────────────────
+HYPOTHESIS
+───────────────────────────────────────────────────────────────────────
+LunarLander rewards are sparse; gamma affects credit assignment for the final landing reward. The current gamma (0.99) may undervalue terminal rewards, preventing the agent from learning to prioritize safe landings.
+
+Higher gamma values (0.995, 0.999) should:
+1. Better propagate the terminal landing reward (+100 to +140) back through the episode
+2. Encourage longer-term planning for successful landing
+
+Lower gamma (0.95) serves as a control showing whether short-term focus helps or hurts.
+
+**Null hypothesis:** Gamma has minimal impact on learning; the bottleneck lies elsewhere.
+
+───────────────────────────────────────────────────────────────────────
+CONFIGURATION
+───────────────────────────────────────────────────────────────────────
+- Type: grid
+- Episodes per run: 1500
+- Runs per config: 1
+- Total runs: 4
+
+**Parameters:**
+| Parameter | Values | Rationale |
+|-----------|--------|-----------|
+| gamma | 0.95, 0.99, 0.995, 0.999 | Conservative → aggressive future discounting |
+| actor_lr | 0.0001 (fixed) | Best from Experiment 2 |
+| critic_lr | 0.0006 (fixed) | Best from Experiment 2 |
+
+───────────────────────────────────────────────────────────────────────
+RESULTS
+───────────────────────────────────────────────────────────────────────
+
+| gamma | Success% | Final100% | Mean Reward | Max Reward | Time(s) |
+|-------|----------|-----------|-------------|------------|---------|
+| 0.95 | | | | | |
+| 0.99 | | | | | |
+| 0.995 | | | | | |
+| 0.999 | | | | | |
+
+**[RESULTS PENDING - sweep not yet executed]**
+
+───────────────────────────────────────────────────────────────────────
+CONCLUSION
+───────────────────────────────────────────────────────────────────────
+**Hypothesis supported?** [Pending]
+
+**Key findings:**
+1. [Pending]
+2. [Pending]
+
+**Recommended configuration:**
+- gamma: [Pending]
+
+**Limitations / caveats:**
+- Single run per config (no variance estimates)
+- If all configs show 0% success, gamma is not the limiting factor
+
+───────────────────────────────────────────────────────────────────────
+NEXT STEPS
+───────────────────────────────────────────────────────────────────────
+- [ ] Execute sweep
+- [ ] Analyze results and update this log
+- [ ] If gamma matters, consider gamma × learning rate interaction sweep
+
+---
+
 ## Completed Experiments
 
 ### 2026-01-16 - LR Sweep Configs (NOT EXECUTED)

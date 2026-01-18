@@ -59,7 +59,13 @@ def create_environments(
     if run_config.framerate is not None:
         render_env.metadata["render_fps"] = run_config.framerate
 
-    logger.info(f"Created async vectorized env with {run_config.num_envs} parallel processes")
+    # Log which environment(s) will actually be used based on render_mode
+    if run_config.render_mode == 'all':
+        logger.info("Created render environment (vectorized env created but unused)")
+    elif run_config.render_mode == 'none':
+        logger.info(f"Created async vectorized env with {run_config.num_envs} parallel processes")
+    else:
+        logger.info(f"Created both envs: {run_config.num_envs} parallel + 1 render env for custom episodes")
 
     bundle = EnvironmentBundle(
         vec_env=vec_env,

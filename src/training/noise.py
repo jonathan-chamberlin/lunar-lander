@@ -82,10 +82,10 @@ class OUActionNoise:
         Returns:
             Noise tensor of shape (action_dimensions,)
         """
-        random_noise = np.random.normal(size=(1, self.action_dimensions))
-        single_noise = (
-            self.noise[env_idx:env_idx + 1]
-            + self.theta * (self.mu - self.noise[env_idx:env_idx + 1]) * self.dt
+        random_noise = np.random.normal(size=(self.action_dimensions,))
+        self.noise[env_idx] = (
+            self.noise[env_idx]
+            + self.theta * (self.mu - self.noise[env_idx]) * self.dt
             + self.sigma * np.sqrt(self.dt) * random_noise
         )
-        return T.from_numpy(single_noise[0]).float()
+        return T.from_numpy(self.noise[env_idx].copy()).float()

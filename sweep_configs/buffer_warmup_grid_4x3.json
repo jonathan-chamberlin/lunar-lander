@@ -1,0 +1,10 @@
+{
+  "name": "buffer_warmup_grid_4x3",
+  "description": "4x3 grid search: buffer_size x min_experiences_before_training to test experience diversity impact",
+  "type": "grid",
+  "episodes_per_run": 1000,
+  "parameters": {
+    "buffer_size": [50000, 100000, 500000, 1000000],
+    "min_experiences_before_training": [1000, 10000, 25000]
+  }
+}

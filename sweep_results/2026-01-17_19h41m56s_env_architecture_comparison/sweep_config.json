@@ -1,0 +1,18 @@
+{
+  "name": "env_architecture_comparison",
+  "description": "Compare single-env (num_envs=1) vs vectorized (num_envs=8) TD3 training",
+  "type": "grid",
+  "episodes_per_run": 1500,
+  "parameters": {
+    "num_envs": [
+      1,
+      8
+    ],
+    "actor_lr": [
+      0.0001
+    ],
+    "critic_lr": [
+      0.0006
+    ]
+  }
+}

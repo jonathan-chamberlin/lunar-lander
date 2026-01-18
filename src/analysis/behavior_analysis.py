@@ -34,7 +34,7 @@ class Thresholds:
 
     # Position thresholds
     OFF_SCREEN_Y = 1.5
-    OFF_SCREEN_X = 1.0
+    OFF_SCREEN_X = 2.45  # Environment boundary: left <= -2.45, right >= 2.45
     LOW_ALTITUDE = 0.25
     MEDIUM_ALTITUDE = 0.5
     CENTERED = 0.3
@@ -241,11 +241,10 @@ class BehaviorAnalyzer:
         one_leg = (final_leg1 > 0.5) != (final_leg2 > 0.5)
 
         # Check for flying off screen
-        # Consider both position AND velocity to catch cases where episode ends before crossing threshold
-        # The environment often terminates slightly before the lander fully exits
+        # Only classify as flew_off when position actually reaches the boundary
         off_top = final_y > Thresholds.OFF_SCREEN_Y
-        off_left = final_x < -Thresholds.OFF_SCREEN_X or (final_x < -0.7 and final_vx < -0.2)
-        off_right = final_x > Thresholds.OFF_SCREEN_X or (final_x > 0.7 and final_vx > 0.2)
+        off_left = final_x <= -Thresholds.OFF_SCREEN_X  # x <= -2.45
+        off_right = final_x >= Thresholds.OFF_SCREEN_X  # x >= 2.45
 
         if off_top or off_left or off_right:
             # Determine primary direction based on velocity and tilt

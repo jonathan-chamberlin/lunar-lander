@@ -1,0 +1,20 @@
+{
+  "name": "gamma_sweep_1x4",
+  "description": "1x4 grid search over discount factor (gamma) to test credit assignment for terminal rewards",
+  "type": "grid",
+  "episodes_per_run": 1500,
+  "parameters": {
+    "gamma": [
+      0.95,
+      0.99,
+      0.995,
+      0.999
+    ],
+    "actor_lr": [
+      0.0001
+    ],
+    "critic_lr": [
+      0.0006
+    ]
+  }
+}

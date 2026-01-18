@@ -1,0 +1,26 @@
+{
+  "name": "batch_policy_4x4",
+  "description": "4x4 grid search: batch_size \u00c3\u2014 policy_update_frequency with best-known LRs",
+  "type": "grid",
+  "episodes_per_run": 1000,
+  "parameters": {
+    "batch_size": [
+      64,
+      128,
+      256,
+      512
+    ],
+    "policy_update_frequency": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "actor_lr": [
+      0.0001
+    ],
+    "critic_lr": [
+      0.0006
+    ]
+  }
+}
