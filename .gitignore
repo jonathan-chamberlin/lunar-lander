@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Windows reserved names (can cause issues)
+nul
+NUL
+con
+CON
+aux
+AUX
+prn
+PRN
+
+# Claude local settings
+.claude/settings.local.json
