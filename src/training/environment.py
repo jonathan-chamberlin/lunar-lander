@@ -113,9 +113,8 @@ def shape_reward(
     # Time penalty to discourage hovering (-0.05 per step)
     shaped_reward -= 0.05
 
-    # Bonuses apply if moving downward (relaxed gate to allow controlled descent)
-    # y_vel < 0.1 allows slow descent while still preventing upward hovering
-    is_descending = y_vel < 0.1
+    # All per-step bonuses ONLY apply if descending (prevents hover exploitation)
+    is_descending = y_vel < -0.05
 
     if is_descending:
         # Reward for being close to ground

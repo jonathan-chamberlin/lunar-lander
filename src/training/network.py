@@ -46,10 +46,12 @@ class ActorNetwork(nn.Module):
         nn.init.xavier_uniform_(self.main_engine_layer.weight)
         nn.init.xavier_uniform_(self.side_engine_layer.weight)
 
-        # Initialize all biases to zero (no action bias - let agent learn from scratch)
+        # Initialize biases to zero except main engine
         nn.init.constant_(self.layer1.bias, 0.0)
         nn.init.constant_(self.layer2.bias, 0.0)
-        nn.init.constant_(self.main_engine_layer.bias, 0.0)
+        # Main engine bias positive so agent starts with thrust tendency
+        # tanh(0.3) ≈ 0.29, giving initial upward thrust to counteract gravity
+        nn.init.constant_(self.main_engine_layer.bias, 0.3)
         nn.init.constant_(self.side_engine_layer.bias, 0.0)
 
     def forward(self, state: T.Tensor) -> T.Tensor:
