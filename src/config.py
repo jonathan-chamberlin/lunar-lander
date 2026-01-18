@@ -116,7 +116,6 @@ class NoiseConfig:
     noise_scale_final: float = 0.2
     noise_decay_episodes: int = 300
 
-
 @dataclass
 class Config:
     """Master configuration combining all config sections."""
