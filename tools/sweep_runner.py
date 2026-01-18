@@ -318,7 +318,7 @@ def run_sweep(sweep_config: Dict[str, Any], dry_run: bool = False) -> List[Dict[
     # Create results directory
     timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
     sweep_name = sweep_config.get('name', 'sweep')
-    results_dir = Path('sweep_results') / f"{timestamp}_{sweep_name}"
+    results_dir = Path('sweep_results') / f"{sweep_name}_{timestamp}"
     results_dir.mkdir(parents=True, exist_ok=True)
 
     # Save sweep config

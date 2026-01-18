@@ -24,3 +24,42 @@ C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\s
 C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
   from pkg_resources import resource_stream, resource_exists
   Batch 1 (Runs 1-100) completed. Success: 0%
+  Batch 2 (Runs 101-200) completed. Success: 0%
+  Batch 3 (Runs 201-300) completed. Success: 0%
+  Batch 4 (Runs 301-400) completed. Success: 0%
+  Batch 5 (Runs 401-500) completed. Success: 0%
+  Batch 6 (Runs 501-600) completed. Success: 0%
+  Batch 7 (Runs 601-700) completed. Success: 0%
+  Batch 8 (Runs 701-800) completed. Success: 0%
+  Batch 9 (Runs 801-900) completed. Success: 0%
+  Batch 10 (Runs 901-1000) completed. Success: 0%
+  Success rate: 0.0%
+  Mean reward: -180.0
+  Time: 12373.9s
+
+============================================================
+Running run_002: buffer_size=50000_min_experiences_before_training=10000
+Progress: 2/12
+============================================================
+C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\.venv-3.12.5\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+  Batch 1 (Runs 1-100) completed. Success: 0%
+  Batch 2 (Runs 101-200) completed. Success: 0%
+  Batch 3 (Runs 201-300) completed. Success: 0%
+  Batch 4 (Runs 301-400) completed. Success: 0%
+  Batch 5 (Runs 401-500) completed. Success: 0%
+  Batch 6 (Runs 501-600) completed. Success: 0%
