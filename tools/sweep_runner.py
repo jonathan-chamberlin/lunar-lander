@@ -14,8 +14,7 @@ import json
 import itertools
 import os
 import sys
-import time
-from dataclasses import asdict, replace
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -144,6 +143,10 @@ def run_training_with_config(
 ) -> Dict[str, Any]:
     """Run training with a specific configuration and collect results.
 
+    Uses the shared run_training() function from training.runner to avoid
+    code duplication. This enables sweeps to use the same training logic
+    as the CLI, including support for rendered episodes.
+
     Args:
         config: Training configuration
         run_name: Name for this run
@@ -153,181 +156,26 @@ def run_training_with_config(
     Returns:
         Dict with training results
     """
-    # Import training components
-    from training.trainer import TD3Trainer
-    from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
-    from training.noise import OUActionNoise
-    from training.environment import create_environments, shape_reward, compute_noise_scale, EpisodeManager
-    from analysis.diagnostics import DiagnosticsTracker
-    from analysis.behavior_analysis import BehaviorAnalyzer
+    from training.runner import run_training
+    from training.training_options import TrainingOptions
     from analysis.charts import ChartGenerator
 
-    import torch as T
-    import numpy as np
+    options = TrainingOptions(
+        output_mode='background',
+        results_dir=results_dir,
+        charts_dir=charts_dir,
+        run_name=run_name,
+        require_pygame=(config.run.render_mode != 'none'),
+        enable_logging=False,
+        save_model=False,
+        show_final_charts=False,
+    )
 
-    start_time = time.time()
+    result = run_training(config, options)
 
-    # Initialize components
-    trainer = TD3Trainer(config.training, config.environment, config.run)
-
-    if config.training.use_per:
-        replay_buffer = PrioritizedReplayBuffer(
-            capacity=config.training.buffer_size,
-            alpha=config.training.per_alpha,
-            beta_start=config.training.per_beta_start,
-            beta_end=config.training.per_beta_end,
-            epsilon=config.training.per_epsilon
-        )
-    else:
-        replay_buffer = ReplayBuffer(config.training.buffer_size)
-
-    noise = OUActionNoise(config.noise, config.run.num_envs)
-    diagnostics = DiagnosticsTracker()
-    behavior_analyzer = BehaviorAnalyzer()
-
-    # Track results
-    episode_rewards = []
-    successes = []
-    first_success_episode = None
-
-    with create_environments(config.run, config.environment) as env_bundle:
-        observations, _ = env_bundle.vec_env.reset()
-        states = T.from_numpy(observations).float()
-        episode_manager = EpisodeManager(config.run.num_envs)
-
-        completed_episodes = 0
-        steps_since_training = 0
-        training_started = False
-
-        while completed_episodes < config.run.num_episodes:
-            noise_scale = compute_noise_scale(
-                completed_episodes,
-                config.noise.noise_scale_initial,
-                config.noise.noise_scale_final,
-                config.noise.noise_decay_episodes
-            )
-
-            # Generate actions
-            if completed_episodes < config.run.random_warmup_episodes:
-                actions = T.from_numpy(env_bundle.vec_env.action_space.sample()).float()
-            else:
-                with T.no_grad():
-                    exploration_noise = noise.generate() * noise_scale
-                    actions = trainer.actor(states) + exploration_noise
-                    actions[:, 0] = T.clamp(actions[:, 0], -1.0, 1.0)
-                    actions[:, 1] = T.clamp(actions[:, 1], -1.0, 1.0)
-
-            # Step environments
-            actions_np = actions.detach().cpu().numpy()
-            next_observations, rewards, terminateds, truncateds, infos = env_bundle.vec_env.step(actions_np)
-            next_states = T.from_numpy(next_observations).float()
-
-            states_detached = states.detach()
-            actions_detached = actions.detach()
-            next_states_detached = next_states.detach()
-
-            from data_types import Experience
-
-            for i in range(config.run.num_envs):
-                current_step = episode_manager.step_counts[i]
-                shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i], step=current_step)
-
-                episode_manager.add_step(i, float(rewards[i]), shaped_reward, actions_np[i], observations[i].copy())
-
-                experience = Experience(
-                    state=states_detached[i].clone(),
-                    action=actions_detached[i].clone(),
-                    reward=T.tensor(shaped_reward, dtype=T.float32),
-                    next_state=next_states_detached[i].clone(),
-                    done=T.tensor(terminateds[i])
-                )
-                replay_buffer.push(experience)
-
-                if terminateds[i] or truncateds[i]:
-                    total_reward, env_reward, shaped_bonus, actions_array, observations_array, duration = \
-                        episode_manager.get_episode_stats(i)
-
-                    success = env_reward >= config.environment.success_threshold
-                    episode_rewards.append(env_reward)
-                    successes.append(success)
-
-                    if success and first_success_episode is None:
-                        first_success_episode = completed_episodes
-
-                    # Record to diagnostics tracker
-                    diagnostics.record_episode(
-                        episode_num=completed_episodes,
-                        env_reward=env_reward,
-                        shaped_bonus=shaped_bonus,
-                        duration_seconds=duration,
-                        success=success
-                    )
-
-                    # Analyze behavior and record
-                    if observations_array is not None and actions_array is not None:
-                        behavior_report = behavior_analyzer.analyze(
-                            observations_array,
-                            actions_array,
-                            terminateds[i],
-                            truncateds[i]
-                        )
-                        diagnostics.record_behavior(
-                            outcome=behavior_report.outcome,
-                            behaviors=behavior_report.behaviors,
-                            env_reward=env_reward,
-                            success=success
-                        )
-
-                    episode_manager.reset_env(i)
-                    noise.reset(i)
-                    completed_episodes += 1
-
-                    # Print batch completion every 100 episodes
-                    if completed_episodes % 100 == 0:
-                        batch_num = completed_episodes // 100
-                        batch_successes = successes[-100:] if len(successes) >= 100 else successes
-                        batch_success_rate = sum(batch_successes) / len(batch_successes) * 100 if batch_successes else 0
-                        print(f"  Batch {batch_num} (Runs {(batch_num-1)*100+1}-{completed_episodes}) completed. Success: {batch_success_rate:.0f}%")
-
-                    if completed_episodes >= config.run.num_episodes:
-                        break
-
-            states = next_states
-            observations = next_observations
-            steps_since_training += config.run.num_envs
-
-            # Training
-            if config.run.training_enabled and replay_buffer.is_ready(config.training.min_experiences_before_training):
-                if not training_started:
-                    training_started = True
-
-                if config.training.use_per:
-                    progress = completed_episodes / config.run.num_episodes
-                    replay_buffer.anneal_beta(progress)
-
-                updates_to_do = max(1, steps_since_training // 4)
-                trainer.train_on_buffer(replay_buffer, updates_to_do)
-                steps_since_training = 0
-                trainer.step_schedulers()
-
-    elapsed_time = time.time() - start_time
-
-    # Compute results
-    episode_rewards = np.array(episode_rewards)
-    successes = np.array(successes)
-
-    results = {
-        'run_name': run_name,
-        'total_episodes': len(episode_rewards),
-        'success_rate': float(np.mean(successes)) * 100,
-        'mean_reward': float(np.mean(episode_rewards)),
-        'std_reward': float(np.std(episode_rewards)),
-        'max_reward': float(np.max(episode_rewards)),
-        'min_reward': float(np.min(episode_rewards)),
-        'first_success_episode': first_success_episode,
-        'final_100_success_rate': float(np.mean(successes[-100:])) * 100 if len(successes) >= 100 else None,
-        'elapsed_time': elapsed_time,
-    }
+    # Convert to sweep dict format
+    results = result.to_sweep_dict()
+    results['run_name'] = run_name
 
     # Save individual run results
     run_results_path = results_dir / f"{run_name}_results.json"
@@ -338,7 +186,7 @@ def run_training_with_config(
     if charts_dir is not None:
         charts_dir.mkdir(parents=True, exist_ok=True)
         chart_path = charts_dir / f"{run_name}_chart.png"
-        chart_generator = ChartGenerator(diagnostics)
+        chart_generator = ChartGenerator(result.diagnostics)
         if chart_generator.generate_to_file(str(chart_path)):
             print(f"  Chart saved to: {chart_path}")
 

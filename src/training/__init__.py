@@ -11,6 +11,9 @@ from training.environment import (
     compute_noise_scale,
     EpisodeManager
 )
+from training.training_options import TrainingOptions
+from training.training_result import TrainingResult
+from training.runner import run_training
 
 __all__ = [
     'ActorNetwork',
@@ -27,4 +30,7 @@ __all__ = [
     'shape_reward',
     'compute_noise_scale',
     'EpisodeManager',
+    'TrainingOptions',
+    'TrainingResult',
+    'run_training',
 ]

@@ -5,16 +5,16 @@ and improve code readability.
 """
 
 from dataclasses import dataclass
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Any, Optional, Union, TYPE_CHECKING
 
 import numpy as np
-import pygame as pg
 
 from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from analysis.diagnostics import DiagnosticsTracker
 
 if TYPE_CHECKING:
     from data.run_logger import RunLogger
+    import pygame as pg
 
 
 @dataclass
@@ -68,7 +68,9 @@ class PyGameContext:
     """Pygame objects for rendering.
 
     Groups the pygame-related objects needed for rendered episodes.
+    Type hints use Any to avoid requiring pygame import at module load time,
+    enabling headless operation in sweep_runner.
     """
-    font: pg.font.Font
-    screen: pg.Surface
-    clock: pg.time.Clock
+    font: Any  # pg.font.Font
+    screen: Any  # pg.Surface
+    clock: Any  # pg.time.Clock
