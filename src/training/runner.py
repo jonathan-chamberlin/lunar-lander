@@ -249,6 +249,7 @@ def _run_rendered_episode(
     while running:
         for event in pg.event.get():
             if event.type == pg.QUIT:
+                logger.warning(f"pygame QUIT event received at episode {episode_num}")
                 running = False
                 user_quit = True
                 break
@@ -515,6 +516,7 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                         total_steps = timing_state.total_steps
 
                         if result is None:
+                            logger.warning(f"Rendered episode returned None at episode {completed_episodes} - user quit detected")
                             user_quit = True
                             break
 

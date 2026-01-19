@@ -253,6 +253,19 @@ def run_sweep(
         raise ValueError(f"Unknown sweep type: {sweep_type}")
 
     configs = list(config_generator)
+
+    # Repeat each configuration if num_runs_per_config > 1
+    num_runs_per_config = sweep_config.get('num_runs_per_config', 1)
+    if num_runs_per_config > 1:
+        expanded_configs = []
+        for params, config in configs:
+            for run_idx in range(num_runs_per_config):
+                # Add run index to params for identification
+                run_params = dict(params)
+                run_params['_run'] = run_idx + 1
+                expanded_configs.append((run_params, config))
+        configs = expanded_configs
+
     print(f"Generated {len(configs)} configurations for sweep '{sweep_name}'")
     print(f"Results will be saved to: {results_dir}")
 

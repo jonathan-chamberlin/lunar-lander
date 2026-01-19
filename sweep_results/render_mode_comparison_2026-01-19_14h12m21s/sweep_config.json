@@ -4,6 +4,9 @@
   "episodes_per_run": 1500,
   "num_runs_per_config": 2,
   "parameters": {
-    "render_mode": ["all", "none"]
+    "render_mode": [
+      "all",
+      "none"
+    ]
   }
 }
