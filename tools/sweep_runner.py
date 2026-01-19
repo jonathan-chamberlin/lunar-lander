@@ -6,6 +6,7 @@ and collects results for comparison.
 Usage:
     python tools/sweep_runner.py sweep_configs/example_lr_sweep.json
     python tools/sweep_runner.py --config sweep_configs/example_lr_sweep.json --dry-run
+    python tools/sweep_runner.py --config config.json --output-dir experiments/EXP_001/results
 """
 
 import argparse
@@ -135,13 +136,19 @@ def apply_params_to_config(config: Config, params: Dict[str, Any]) -> Config:
     )
 
 
-def run_training_with_config(config: Config, run_name: str, results_dir: Path) -> Dict[str, Any]:
+def run_training_with_config(
+    config: Config,
+    run_name: str,
+    results_dir: Path,
+    charts_dir: Optional[Path] = None
+) -> Dict[str, Any]:
     """Run training with a specific configuration and collect results.
 
     Args:
         config: Training configuration
         run_name: Name for this run
         results_dir: Directory to save results
+        charts_dir: Directory to save charts (if None, no charts generated)
 
     Returns:
         Dict with training results
@@ -153,6 +160,7 @@ def run_training_with_config(config: Config, run_name: str, results_dir: Path) -
     from training.environment import create_environments, shape_reward, compute_noise_scale, EpisodeManager
     from analysis.diagnostics import DiagnosticsTracker
     from analysis.behavior_analysis import BehaviorAnalyzer
+    from analysis.charts import ChartGenerator
 
     import torch as T
     import numpy as np
@@ -246,6 +254,30 @@ def run_training_with_config(config: Config, run_name: str, results_dir: Path) -
                     if success and first_success_episode is None:
                         first_success_episode = completed_episodes
 
+                    # Record to diagnostics tracker
+                    diagnostics.record_episode(
+                        episode_num=completed_episodes,
+                        env_reward=env_reward,
+                        shaped_bonus=shaped_bonus,
+                        duration_seconds=duration,
+                        success=success
+                    )
+
+                    # Analyze behavior and record
+                    if observations_array is not None and actions_array is not None:
+                        behavior_report = behavior_analyzer.analyze(
+                            observations_array,
+                            actions_array,
+                            terminateds[i],
+                            truncateds[i]
+                        )
+                        diagnostics.record_behavior(
+                            outcome=behavior_report.outcome,
+                            behaviors=behavior_report.behaviors,
+                            env_reward=env_reward,
+                            success=success
+                        )
+
                     episode_manager.reset_env(i)
                     noise.reset(i)
                     completed_episodes += 1
@@ -302,15 +334,28 @@ def run_training_with_config(config: Config, run_name: str, results_dir: Path) -
     with open(run_results_path, 'w') as f:
         json.dump(results, f, indent=2)
 
+    # Generate chart if charts_dir provided
+    if charts_dir is not None:
+        charts_dir.mkdir(parents=True, exist_ok=True)
+        chart_path = charts_dir / f"{run_name}_chart.png"
+        chart_generator = ChartGenerator(diagnostics)
+        if chart_generator.generate_to_file(str(chart_path)):
+            print(f"  Chart saved to: {chart_path}")
+
     return results
 
 
-def run_sweep(sweep_config: Dict[str, Any], dry_run: bool = False) -> List[Dict[str, Any]]:
+def run_sweep(
+    sweep_config: Dict[str, Any],
+    dry_run: bool = False,
+    output_dir: Optional[Path] = None
+) -> List[Dict[str, Any]]:
     """Execute a hyperparameter sweep.
 
     Args:
         sweep_config: Sweep configuration dict
         dry_run: If True, only print configurations without running
+        output_dir: Custom output directory. If None, uses sweep_results/<name>_<timestamp>
 
     Returns:
         List of result dicts from each run
@@ -318,8 +363,16 @@ def run_sweep(sweep_config: Dict[str, Any], dry_run: bool = False) -> List[Dict[
     # Create results directory
     timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
     sweep_name = sweep_config.get('name', 'sweep')
-    results_dir = Path('sweep_results') / f"{sweep_name}_{timestamp}"
+
+    if output_dir is not None:
+        results_dir = Path(output_dir)
+    else:
+        results_dir = Path('sweep_results') / f"{sweep_name}_{timestamp}"
     results_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create charts directory
+    charts_dir = results_dir.parent / 'charts' if output_dir else results_dir / 'charts'
+    charts_dir.mkdir(parents=True, exist_ok=True)
 
     # Save sweep config
     with open(results_dir / 'sweep_config.json', 'w') as f:
@@ -373,7 +426,7 @@ def run_sweep(sweep_config: Dict[str, Any], dry_run: bool = False) -> List[Dict[
         print('='*60)
 
         try:
-            results = run_training_with_config(config, run_name, results_dir)
+            results = run_training_with_config(config, run_name, results_dir, charts_dir)
             results['parameters'] = params
             all_results.append(results)
 
@@ -457,6 +510,8 @@ def main():
     parser.add_argument('config', nargs='?', help='Path to sweep config JSON file')
     parser.add_argument('--config', '-c', dest='config_flag', help='Path to sweep config JSON file')
     parser.add_argument('--dry-run', action='store_true', help='Print configurations without running')
+    parser.add_argument('--output-dir', '-o', dest='output_dir',
+                        help='Custom output directory for results (e.g., experiments/EXP_001/results)')
 
     args = parser.parse_args()
 
@@ -464,6 +519,7 @@ def main():
     if not config_path:
         print("Usage: python tools/sweep_runner.py <config.json>")
         print("       python tools/sweep_runner.py --config <config.json> --dry-run")
+        print("       python tools/sweep_runner.py --config <config.json> --output-dir experiments/EXP_001/results")
         sys.exit(1)
 
     if not os.path.exists(config_path):
@@ -471,7 +527,8 @@ def main():
         sys.exit(1)
 
     sweep_config = load_sweep_config(config_path)
-    run_sweep(sweep_config, dry_run=args.dry_run)
+    output_dir = Path(args.output_dir) if args.output_dir else None
+    run_sweep(sweep_config, dry_run=args.dry_run, output_dir=output_dir)
 
 
 if __name__ == '__main__':
