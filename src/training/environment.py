@@ -1,14 +1,12 @@
 """Environment management and reward shaping for Lunar Lander."""
 
 import logging
-import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Generator, Tuple, Set, Optional
+from typing import Generator, Set
 
 import gymnasium as gym
 import numpy as np
-from gymnasium.vector import AsyncVectorEnv
 
 from config import RunConfig, EnvironmentConfig
 
@@ -17,17 +15,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class EnvironmentBundle:
-    """Bundle of environments for training.
+    """Bundle containing the training environment.
 
     Attributes:
-        vec_env: Vectorized environment for parallel training (async for speed)
-        render_env: Single environment for rendered episodes
+        env: Single Gymnasium environment for training
         render_episodes: Set of episode numbers to render
+        should_render: Whether rendering is enabled for this bundle
     """
 
-    vec_env: AsyncVectorEnv
-    render_env: gym.Env
+    env: gym.Env
     render_episodes: Set[int]
+    should_render: bool
 
 
 @contextmanager
@@ -35,50 +33,41 @@ def create_environments(
     run_config: RunConfig,
     env_config: EnvironmentConfig
 ) -> Generator[EnvironmentBundle, None, None]:
-    """Context manager for creating and managing Gymnasium environments.
+    """Context manager for creating and managing Gymnasium environment.
 
-    Ensures proper cleanup of environments even if an exception occurs.
+    Creates a single environment for training. If render_mode is 'all' or 'custom',
+    the environment is created with rgb_array rendering. If 'none', no rendering.
 
     Args:
         run_config: Configuration for training runs
         env_config: Environment configuration
 
     Yields:
-        EnvironmentBundle containing vectorized and render environments
+        EnvironmentBundle containing the training environment
     """
-    # Create vectorized environment for fast parallel training
-    # AsyncVectorEnv runs environments in separate processes for true parallelization
-    vec_env = AsyncVectorEnv([
-        lambda: gym.make(env_config.env_name)
-        for _ in range(run_config.num_envs)
-    ])
+    should_render = run_config.render_mode != 'none'
 
-    # Create single environment for rendered episodes
-    # Use rgb_array mode so we control rendering and can add overlays without flicker
-    render_env = gym.make(env_config.env_name, render_mode="rgb_array")
-    if run_config.framerate is not None:
-        render_env.metadata["render_fps"] = run_config.framerate
-
-    # Log which environment(s) will actually be used based on render_mode
-    if run_config.render_mode == 'all':
-        logger.info("Created render environment (vectorized env created but unused)")
-    elif run_config.render_mode == 'none':
-        logger.info(f"Created async vectorized env with {run_config.num_envs} parallel processes")
+    # Create environment with appropriate render mode
+    if should_render:
+        env = gym.make(env_config.env_name, render_mode="rgb_array")
+        if run_config.framerate is not None:
+            env.metadata["render_fps"] = run_config.framerate
+        logger.info("Created environment with rgb_array rendering")
     else:
-        logger.info(f"Created both envs: {run_config.num_envs} parallel + 1 render env for custom episodes")
+        env = gym.make(env_config.env_name)
+        logger.info("Created environment without rendering (headless mode)")
 
     bundle = EnvironmentBundle(
-        vec_env=vec_env,
-        render_env=render_env,
-        render_episodes=set(run_config.render_episodes)
+        env=env,
+        render_episodes=set(run_config.render_episodes),
+        should_render=should_render
     )
 
     try:
         yield bundle
     finally:
-        vec_env.close()
-        render_env.close()
-        logger.info("Environments closed")
+        env.close()
+        logger.info("Environment closed")
 
 
 def shape_reward(
@@ -174,99 +163,3 @@ def compute_noise_scale(
 
     progress = episode / decay_episodes
     return initial_scale - (initial_scale - final_scale) * progress
-
-
-class EpisodeManager:
-    """Manages per-environment episode state for vectorized training.
-
-    Tracks rewards, actions, and shaped bonuses for each parallel environment.
-    Uses pre-allocated arrays for better performance.
-
-    Args:
-        num_envs: Number of parallel environments
-        max_episode_length: Maximum expected episode length (default 1000 for LunarLander)
-        state_dim: Dimension of observation space (default 8 for LunarLander)
-        action_dim: Dimension of action space (default 2 for LunarLander)
-    """
-
-    def __init__(
-        self,
-        num_envs: int,
-        max_episode_length: int = 1000,
-        state_dim: int = 8,
-        action_dim: int = 2
-    ) -> None:
-        self.num_envs = num_envs
-        self.max_episode_length = max_episode_length
-        self.state_dim = state_dim
-        self.action_dim = action_dim
-        self.reset_all()
-
-    def reset_all(self) -> None:
-        """Reset tracking for all environments."""
-        # Pre-allocate arrays for better performance
-        self.rewards = np.zeros((self.num_envs, self.max_episode_length), dtype=np.float32)
-        self.actions = np.zeros((self.num_envs, self.max_episode_length, self.action_dim), dtype=np.float32)
-        self.observations = np.zeros((self.num_envs, self.max_episode_length, self.state_dim), dtype=np.float32)
-        self.shaped_bonuses = np.zeros(self.num_envs, dtype=np.float32)
-        self.step_counts = np.zeros(self.num_envs, dtype=np.int32)
-        # Track episode start times for duration calculation
-        self.start_times = np.full(self.num_envs, time.time(), dtype=np.float64)
-
-    def reset_env(self, env_idx: int) -> None:
-        """Reset tracking for a single environment.
-
-        Args:
-            env_idx: Index of the environment to reset
-        """
-        self.step_counts[env_idx] = 0
-        self.shaped_bonuses[env_idx] = 0.0
-        self.start_times[env_idx] = time.time()
-
-    def add_step(
-        self,
-        env_idx: int,
-        reward: float,
-        shaped_reward: float,
-        action: np.ndarray,
-        observation: np.ndarray
-    ) -> None:
-        """Record a step for an environment.
-
-        Args:
-            env_idx: Index of the environment
-            reward: Original environment reward
-            shaped_reward: Shaped reward value
-            action: Action taken
-            observation: State observation at this step
-        """
-        step = self.step_counts[env_idx]
-        if step < self.max_episode_length:
-            self.rewards[env_idx, step] = reward
-            self.actions[env_idx, step] = action
-            self.observations[env_idx, step] = observation
-            self.shaped_bonuses[env_idx] += (shaped_reward - reward)
-            self.step_counts[env_idx] += 1
-
-    def get_episode_stats(
-        self,
-        env_idx: int
-    ) -> Tuple[float, float, float, np.ndarray, np.ndarray, float]:
-        """Get episode statistics for a completed environment.
-
-        Args:
-            env_idx: Index of the environment
-
-        Returns:
-            Tuple of (total_reward, env_reward, shaped_bonus, actions_array, observations_array, duration_seconds)
-        """
-        steps = self.step_counts[env_idx]
-        env_reward = float(np.sum(self.rewards[env_idx, :steps]))
-        shaped_bonus = float(self.shaped_bonuses[env_idx])
-        total_reward = env_reward + shaped_bonus
-        duration_seconds = time.time() - self.start_times[env_idx]
-        # Return slices of pre-allocated arrays (no copy needed for read-only use)
-        actions_array = self.actions[env_idx, :steps].copy()
-        observations_array = self.observations[env_idx, :steps].copy()
-
-        return total_reward, env_reward, shaped_bonus, actions_array, observations_array, duration_seconds

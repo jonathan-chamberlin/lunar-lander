@@ -1,0 +1,12 @@
+{
+  "name": "single_env_render_comparison",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 1,
+  "parameters": {
+    "render_mode": [
+      "all",
+      "none"
+    ]
+  }
+}

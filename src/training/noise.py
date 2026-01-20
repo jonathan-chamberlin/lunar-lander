@@ -4,8 +4,6 @@ This module provides noise generation classes for exploration in continuous
 action spaces, particularly the Ornstein-Uhlenbeck process.
 """
 
-from typing import Optional
-
 import numpy as np
 import torch as T
 
@@ -20,16 +18,14 @@ class OUActionNoise:
 
     Args:
         config: NoiseConfig containing mu, sigma, theta, dt, x0, action_dimensions
-        num_envs: Number of parallel environments to generate noise for
     """
 
-    def __init__(self, config: NoiseConfig, num_envs: int = 1) -> None:
+    def __init__(self, config: NoiseConfig) -> None:
         self.sigma = config.sigma
         self.theta = config.theta
         self.dt = config.dt
         self.x0 = config.x0
         self.action_dimensions = config.action_dimensions
-        self.num_envs = num_envs
 
         # Convert mu to numpy array
         if isinstance(config.mu, (int, float)):
@@ -38,54 +34,29 @@ class OUActionNoise:
             self.mu = np.array(config.mu)
 
         # Initialize noise state
-        self.noise: np.ndarray = np.zeros((num_envs, config.action_dimensions))
+        self.noise: np.ndarray = np.zeros(config.action_dimensions)
         self.reset()
 
-    def reset(self, env_idx: Optional[int] = None) -> None:
-        """Reset noise state to initial value.
-
-        Args:
-            env_idx: If provided, reset only that environment's noise.
-                     If None, reset all environments.
-        """
-        if env_idx is not None:
-            if self.x0 is None:
-                self.noise[env_idx] = self.mu.copy()
-            else:
-                self.noise[env_idx] = np.ones(self.action_dimensions) * self.x0
+    def reset(self) -> None:
+        """Reset noise state to initial value."""
+        if self.x0 is None:
+            self.noise = self.mu.copy()
         else:
-            if self.x0 is None:
-                self.noise = np.tile(self.mu, (self.num_envs, 1))
-            else:
-                self.noise = np.ones((self.num_envs, self.action_dimensions)) * self.x0
+            self.noise = np.ones(self.action_dimensions) * self.x0
 
     def generate(self) -> T.Tensor:
-        """Generate noise for all environments.
+        """Generate noise for the current step.
 
-        Returns:
-            Noise tensor of shape (num_envs, action_dimensions)
-        """
-        random_noise = np.random.normal(size=(self.num_envs, self.action_dimensions))
-        self.noise = (
-            self.noise
-            + self.theta * (self.mu - self.noise) * self.dt
-            + self.sigma * np.sqrt(self.dt) * random_noise
-        )
-        return T.from_numpy(self.noise).float()
-
-    def generate_single(self, env_idx: int = 0) -> T.Tensor:
-        """Generate noise for a single environment.
-
-        Args:
-            env_idx: Index of the environment (default: 0)
+        Updates the internal noise state using the OU process and returns
+        the new noise value.
 
         Returns:
             Noise tensor of shape (action_dimensions,)
         """
         random_noise = np.random.normal(size=(self.action_dimensions,))
-        self.noise[env_idx] = (
-            self.noise[env_idx]
-            + self.theta * (self.mu - self.noise[env_idx]) * self.dt
+        self.noise = (
+            self.noise
+            + self.theta * (self.mu - self.noise) * self.dt
             + self.sigma * np.sqrt(self.dt) * random_noise
         )
-        return T.from_numpy(self.noise[env_idx].copy()).float()
+        return T.from_numpy(self.noise.copy()).float()

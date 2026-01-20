@@ -9,7 +9,6 @@ from training.environment import (
     create_environments,
     shape_reward,
     compute_noise_scale,
-    EpisodeManager
 )
 from training.training_options import TrainingOptions
 from training.training_result import TrainingResult
@@ -29,7 +28,6 @@ __all__ = [
     'create_environments',
     'shape_reward',
     'compute_noise_scale',
-    'EpisodeManager',
     'TrainingOptions',
     'TrainingResult',
     'run_training',

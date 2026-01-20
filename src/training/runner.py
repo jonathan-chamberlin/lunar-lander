@@ -21,7 +21,6 @@ from training.environment import (
     create_environments,
     shape_reward,
     compute_noise_scale,
-    EpisodeManager
 )
 from training.noise import OUActionNoise
 from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
@@ -31,8 +30,7 @@ from training.training_result import TrainingResult
 from analysis.diagnostics import DiagnosticsTracker, DiagnosticsReporter
 from analysis.behavior_analysis import BehaviorAnalyzer
 from analysis.charts import ChartGenerator
-from analysis.output_formatter import format_behavior_output
-from constants import SAFE_LANDING_OUTCOMES, OUTCOME_TO_CATEGORY
+from constants import OUTCOME_TO_CATEGORY
 from output_mode import OutputController
 
 if TYPE_CHECKING:
@@ -186,38 +184,60 @@ def _finalize_episode(
     return result
 
 
-def _run_rendered_episode(
-    render_env,
+def _run_episode(
+    env,
     trainer: TD3Trainer,
     noise: OUActionNoise,
     episode_num: int,
     config: Config,
     training_context: "TrainingContext",
     timing_state: "TimingState",
-    pygame_ctx: "PyGameContext",
-    output: OutputController
+    output: OutputController,
+    should_render: bool = False,
+    pygame_ctx: Optional["PyGameContext"] = None
 ) -> tuple[Optional["EpisodeResult"], int]:
-    """Run a single rendered episode with pygame display.
+    """Run a single episode with identical logic for rendered and unrendered modes.
+
+    The ONLY difference between rendered and unrendered is:
+    - Rendered: displays frames via pygame, handles quit events
+    - Unrendered: no display, no pygame
+
+    All training logic (action generation, experience storage, rewards) is identical.
 
     Args:
-        render_env: Gymnasium environment with rgb_array rendering
+        env: Gymnasium environment
         trainer: TD3 trainer instance
         noise: Noise generator for exploration
         episode_num: Current episode number
         config: Full configuration
         training_context: Training context with diagnostics, buffer, thresholds
         timing_state: Timing state for speed tracking
-        pygame_ctx: Pygame context with font, screen, clock
         output: OutputController for mode-aware printing
+        should_render: Whether to render frames via pygame
+        pygame_ctx: Pygame context (required if should_render=True)
 
     Returns:
         Tuple of (EpisodeResult or None if user quit, steps taken this episode)
     """
-    import pygame as pg
     from models import EpisodeData
-    from data_types import EpisodeResult
 
-    obs, _ = render_env.reset()
+    # Import pygame only if rendering
+    pg = None
+    frame_surface = None
+    frame_buffer = None
+    text_surface = None
+    text_pos = None
+
+    if should_render:
+        import pygame as pg
+        frame_surface = pg.Surface((600, 400))
+        frame_buffer = np.empty((600, 400, 3), dtype=np.uint8)
+        if config.display.show_run_overlay:
+            text_surface = pygame_ctx.font.render(f"Run: {episode_num}", True, config.display.font_color)
+            text_pos = (config.display.text_x, config.display.text_y)
+
+    # Initialize episode
+    obs, _ = env.reset()
     state = T.from_numpy(obs).float()
     episode_start_time = time.time()
 
@@ -237,31 +257,23 @@ def _run_rendered_episode(
     episode_terminated = False
     episode_truncated = False
 
-    # Pre-allocate surface for frame rendering
-    frame_surface = pg.Surface((600, 400))
-    frame_buffer = np.empty((600, 400, 3), dtype=np.uint8)
-
-    # Pre-render text if overlay is enabled
-    if config.display.show_run_overlay:
-        text_surface = pygame_ctx.font.render(f"Run: {episode_num}", True, config.display.font_color)
-        text_pos = (config.display.text_x, config.display.text_y)
-
     while running:
-        for event in pg.event.get():
-            if event.type == pg.QUIT:
-                logger.warning(f"pygame QUIT event received at episode {episode_num}")
-                running = False
-                user_quit = True
+        # Handle pygame events (only if rendering)
+        if should_render and pg is not None:
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    logger.warning(f"pygame QUIT event received at episode {episode_num}")
+                    running = False
+                    user_quit = True
+                    break
+            if not running:
                 break
 
-        if not running:
-            break
-
-        # Generate action
+        # Generate action (IDENTICAL for both modes)
         if episode_num < config.run.random_warmup_episodes:
-            action = T.from_numpy(render_env.action_space.sample()).float()
+            action = T.from_numpy(env.action_space.sample()).float()
         else:
-            action_noise = noise.generate_single() * noise_scale
+            action_noise = noise.generate() * noise_scale
             action = (trainer.actor(state) + action_noise).float()
             action[0] = T.clamp(action[0], -1.0, 1.0)
             action[1] = T.clamp(action[1], -1.0, 1.0)
@@ -270,29 +282,28 @@ def _run_rendered_episode(
         actions.append(action_np)
         observations_list.append(obs.copy())
 
-        # Step environment
-        next_obs, reward, terminated, truncated, info = render_env.step(action_np)
+        # Step environment (IDENTICAL for both modes)
+        next_obs, reward, terminated, truncated, info = env.step(action_np)
         next_state = T.from_numpy(next_obs).float()
 
-        # Render frame
-        frame = render_env.render()
-        frame_buffer[:] = frame.transpose(1, 0, 2)
-        pg.surfarray.blit_array(frame_surface, frame_buffer)
-        pygame_ctx.screen.blit(frame_surface, (0, 0))
+        # Render frame (only if rendering)
+        if should_render and pg is not None:
+            frame = env.render()
+            frame_buffer[:] = frame.transpose(1, 0, 2)
+            pg.surfarray.blit_array(frame_surface, frame_buffer)
+            pygame_ctx.screen.blit(frame_surface, (0, 0))
+            if text_surface is not None:
+                pygame_ctx.screen.blit(text_surface, text_pos)
+            pg.display.flip()
+            if config.run.framerate is not None:
+                pygame_ctx.clock.tick(config.run.framerate)
 
-        if config.display.show_run_overlay:
-            pygame_ctx.screen.blit(text_surface, text_pos)
-
-        pg.display.flip()
-        if config.run.framerate is not None:
-            pygame_ctx.clock.tick(config.run.framerate)
-
-        # Apply reward shaping
+        # Apply reward shaping (IDENTICAL for both modes)
         current_step = len(rewards)
         shaped_reward = shape_reward(obs, reward, terminated, step=current_step)
         shaped_bonus += (shaped_reward - reward)
 
-        # Store experience
+        # Store experience (IDENTICAL for both modes)
         experience = Experience(
             state=state.detach().clone(),
             action=action.detach().clone(),
@@ -302,15 +313,18 @@ def _run_rendered_episode(
         )
         training_context.replay_buffer.push(experience)
 
+        # Update state (IDENTICAL for both modes)
         state = next_state
         obs = next_obs
         rewards.append(float(reward))
 
+        # Check termination (IDENTICAL for both modes)
         if terminated or truncated:
             episode_terminated = terminated
             episode_truncated = truncated
             running = False
 
+    # Compute results (IDENTICAL for both modes)
     episode_steps = len(rewards)
 
     if user_quit:
@@ -333,9 +347,10 @@ def _run_rendered_episode(
         observations_array=np.array(observations_list),
         terminated=episode_terminated,
         truncated=episode_truncated,
-        rendered=True
+        rendered=should_render
     )
     result = _finalize_episode(episode_data, training_context, timing_state, output)
+
     return result, episode_steps
 
 
@@ -387,7 +402,7 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
         replay_buffer = ReplayBuffer(config.training.buffer_size)
         logger.info("Using uniform Experience Replay")
 
-    noise = OUActionNoise(config.noise, config.run.num_envs)
+    noise = OUActionNoise(config.noise)
     diagnostics = DiagnosticsTracker()
     reporter = DiagnosticsReporter(diagnostics)
 
@@ -395,17 +410,16 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
 
     logger.info(f"Starting TD3 training for {config.run.num_episodes} episodes")
     if config.run.render_mode == 'all':
-        logger.info("Using single rendered environment (render_mode='all')")
+        logger.info("Using single environment with rendering")
     elif config.run.render_mode == 'none':
-        logger.info(f"Using {config.run.num_envs} parallel environments (render_mode='none')")
+        logger.info("Using single environment without rendering (headless mode)")
     else:
-        logger.info(f"Using mixed mode: {len(config.run.render_episodes)} rendered, rest use {config.run.num_envs} parallel envs")
+        logger.info(f"Using single environment with selective rendering ({len(config.run.render_episodes)} episodes)")
     if not config.run.training_enabled:
         logger.warning("TRAINING DISABLED - running simulation only")
 
     # Training state
     completed_episodes = 0
-    steps_since_training = 0
     total_steps = 0
     training_started = False
     user_quit = False
@@ -479,10 +493,6 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
 
     try:
         with create_environments(config.run, config.environment) as env_bundle:
-            observations, _ = env_bundle.vec_env.reset()
-            states = T.from_numpy(observations).float()
-            episode_manager = EpisodeManager(config.run.num_envs)
-
             # Stop signal file for external termination
             script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             stop_file = os.path.join(script_dir, ".stop_simulation")
@@ -506,155 +516,31 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                     if T.cuda.is_available():
                         T.cuda.empty_cache()
 
-                # Check if current episode should be rendered
-                if completed_episodes in env_bundle.render_episodes:
-                    if pygame_ctx is None:
-                        # Need pygame but it wasn't initialized - skip rendered episodes
-                        logger.warning(f"Skipping rendered episode {completed_episodes} - pygame not initialized")
-                    else:
-                        result, episode_steps = _run_rendered_episode(
-                            env_bundle.render_env,
-                            trainer,
-                            noise,
-                            completed_episodes,
-                            config,
-                            training_context,
-                            timing_state,
-                            pygame_ctx,
-                            output
-                        )
-                        total_steps = timing_state.total_steps
+                # Determine if this episode should be rendered
+                should_render = completed_episodes in env_bundle.render_episodes and pygame_ctx is not None
 
-                        if result is None:
-                            logger.warning(f"Rendered episode returned None at episode {completed_episodes} - user quit detected")
-                            user_quit = True
-                            break
-
-                        # Training after rendered episode
-                        if config.run.training_enabled and replay_buffer.is_ready(config.training.min_experiences_before_training):
-                            if not training_started:
-                                logger.info(
-                                    f">>> TRAINING STARTED at episode {completed_episodes} "
-                                    f"with {len(replay_buffer)} experiences <<<"
-                                )
-                                training_started = True
-
-                            if config.training.use_per:
-                                progress = completed_episodes / config.run.num_episodes
-                                replay_buffer.anneal_beta(progress)
-
-                            updates_to_do = max(1, result.steps // 4)
-                            metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
-                            trainer.step_schedulers()
-
-                            if completed_episodes % 10 == 0:
-                                noise_scale = compute_noise_scale(
-                                    completed_episodes,
-                                    config.noise.noise_scale_initial,
-                                    config.noise.noise_scale_final,
-                                    config.noise.noise_decay_episodes
-                                )
-                                diagnostics.record_training_metrics(metrics)
-                                reporter.log_training_update(metrics, noise_scale)
-
-                        completed_episodes += 1
-
-                        if completed_episodes % 100 == 0:
-                            batch_num = completed_episodes // 100
-                            output.print_batch_completed(batch_num, (batch_num - 1) * 100 + 1, completed_episodes, diagnostics)
-                            _run_periodic_diagnostics(
-                                reporter, diagnostics, charts_folder, text_folder,
-                                completed_episodes, output, open_charts=options.show_final_charts
-                            )
-                            if aggregate_writer:
-                                aggregate_writer.maybe_write(completed_episodes, diagnostics)
-
-                        continue
-
-                # Non-rendered vectorized training path
-                noise_scale = compute_noise_scale(
+                # Run episode (same logic for both rendered and unrendered)
+                result, episode_steps = _run_episode(
+                    env_bundle.env,
+                    trainer,
+                    noise,
                     completed_episodes,
-                    config.noise.noise_scale_initial,
-                    config.noise.noise_scale_final,
-                    config.noise.noise_decay_episodes
+                    config,
+                    training_context,
+                    timing_state,
+                    output,
+                    should_render=should_render,
+                    pygame_ctx=pygame_ctx
                 )
 
-                if completed_episodes < config.run.random_warmup_episodes:
-                    actions = T.from_numpy(env_bundle.vec_env.action_space.sample()).float()
-                else:
-                    with T.no_grad():
-                        exploration_noise = noise.generate() * noise_scale
-                        actions = trainer.actor(states) + exploration_noise
-                        actions[:, 0] = T.clamp(actions[:, 0], -1.0, 1.0)
-                        actions[:, 1] = T.clamp(actions[:, 1], -1.0, 1.0)
+                if result is None:
+                    logger.warning(f"Episode returned None at episode {completed_episodes} - user quit detected")
+                    user_quit = True
+                    break
 
-                actions_np = actions.detach().cpu().numpy()
-                next_observations, rewards, terminateds, truncateds, infos = env_bundle.vec_env.step(actions_np)
-                next_states = T.from_numpy(next_observations).float()
+                total_steps = timing_state.total_steps
 
-                states_detached = states.detach()
-                actions_detached = actions.detach()
-                next_states_detached = next_states.detach()
-
-                for i in range(config.run.num_envs):
-                    current_step = episode_manager.step_counts[i]
-                    shaped_reward = shape_reward(observations[i], rewards[i], terminateds[i], step=current_step)
-
-                    episode_manager.add_step(i, float(rewards[i]), shaped_reward, actions_np[i], observations[i].copy())
-
-                    experience = Experience(
-                        state=states_detached[i].clone(),
-                        action=actions_detached[i].clone(),
-                        reward=T.tensor(shaped_reward, dtype=T.float32),
-                        next_state=next_states_detached[i].clone(),
-                        done=T.tensor(terminateds[i])
-                    )
-                    replay_buffer.push(experience)
-
-                    if terminateds[i] or truncateds[i]:
-                        total_reward, env_reward, shaped_bonus, actions_array, observations_array, duration = \
-                            episode_manager.get_episode_stats(i)
-
-                        episode_data = EpisodeData(
-                            episode_num=completed_episodes,
-                            total_reward=total_reward,
-                            env_reward=env_reward,
-                            shaped_bonus=shaped_bonus,
-                            steps=episode_manager.step_counts[i],
-                            duration_seconds=duration,
-                            actions_array=actions_array,
-                            observations_array=observations_array,
-                            terminated=terminateds[i],
-                            truncated=truncateds[i],
-                            rendered=False
-                        )
-                        _finalize_episode(episode_data, training_context, timing_state, output)
-
-                        episode_manager.reset_env(i)
-                        noise.reset(i)
-                        completed_episodes += 1
-
-                        if completed_episodes % 100 == 0:
-                            batch_num = completed_episodes // 100
-                            output.print_batch_completed(batch_num, (batch_num - 1) * 100 + 1, completed_episodes, diagnostics)
-                            _run_periodic_diagnostics(
-                                reporter, diagnostics, charts_folder, text_folder,
-                                completed_episodes, output, open_charts=options.show_final_charts
-                            )
-                            if aggregate_writer:
-                                aggregate_writer.maybe_write(completed_episodes, diagnostics)
-
-                        if completed_episodes >= config.run.num_episodes:
-                            break
-
-                states = next_states
-                observations = next_observations
-                steps_since_training += config.run.num_envs
-                total_steps += config.run.num_envs
-                timing_state.total_steps = total_steps
-                timing_state.total_training_updates = trainer.training_steps
-
-                # Training updates
+                # Training after episode
                 if config.run.training_enabled and replay_buffer.is_ready(config.training.min_experiences_before_training):
                     if not training_started:
                         logger.info(
@@ -667,14 +553,35 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                         progress = completed_episodes / config.run.num_episodes
                         replay_buffer.anneal_beta(progress)
 
-                    updates_to_do = max(1, steps_since_training // 4)
+                    updates_to_do = max(1, episode_steps // 4)
                     metrics = trainer.train_on_buffer(replay_buffer, updates_to_do)
-                    steps_since_training = 0
                     trainer.step_schedulers()
+                    timing_state.total_training_updates = trainer.training_steps
 
                     if completed_episodes % 10 == 0:
+                        noise_scale = compute_noise_scale(
+                            completed_episodes,
+                            config.noise.noise_scale_initial,
+                            config.noise.noise_scale_final,
+                            config.noise.noise_decay_episodes
+                        )
                         diagnostics.record_training_metrics(metrics)
                         reporter.log_training_update(metrics, noise_scale)
+
+                # Reset noise for next episode
+                noise.reset()
+                completed_episodes += 1
+
+                # Batch completion handling
+                if completed_episodes % 100 == 0:
+                    batch_num = completed_episodes // 100
+                    output.print_batch_completed(batch_num, (batch_num - 1) * 100 + 1, completed_episodes, diagnostics)
+                    _run_periodic_diagnostics(
+                        reporter, diagnostics, charts_folder, text_folder,
+                        completed_episodes, output, open_charts=options.show_final_charts
+                    )
+                    if aggregate_writer:
+                        aggregate_writer.maybe_write(completed_episodes, diagnostics)
 
     except KeyboardInterrupt:
         error_occurred = "KeyboardInterrupt"

@@ -7,7 +7,6 @@ class RunConfig:
     """Configuration for training runs."""
 
     num_episodes: int = 5000
-    num_envs: int = 8
     random_warmup_episodes: int = 5  # Reduced from 15 (good init bias helps)
     framerate: Optional[int] = None  # None = unlimited speed, or set FPS limit
     timing: bool = True
