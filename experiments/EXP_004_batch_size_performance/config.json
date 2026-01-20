@@ -1,0 +1,9 @@
+{
+  "name": "batch_size_performance",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 2,
+  "parameters": {
+    "batch_size": [32, 64, 128, 256]
+  }
+}

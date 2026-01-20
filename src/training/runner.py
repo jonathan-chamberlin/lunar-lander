@@ -630,10 +630,19 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                     logger.error(f"Failed to write final aggregate: {e}")
 
             # Save model
-            if options.save_model and sim_dir is not None:
+            if options.save_model:
                 try:
-                    model_path = str(sim_dir.models_path / "final_model")
-                    trainer.save(model_path)
+                    # For experiments, save to results_dir; otherwise use sim_dir
+                    if options.is_experiment and options.results_dir is not None:
+                        model_path = str(options.results_dir / f"{options.run_name or 'final'}_model")
+                    elif sim_dir is not None:
+                        model_path = str(sim_dir.models_path / "final_model")
+                    else:
+                        model_path = None
+
+                    if model_path:
+                        trainer.save(model_path)
+                        logger.info(f"Model saved to {model_path}")
                 except Exception as e:
                     logger.error(f"Failed to save model: {e}")
 
@@ -676,6 +685,7 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
         max_reward = float(np.max(episode_rewards))
         min_reward = float(np.min(episode_rewards))
         final_100_success_rate = float(np.mean(successes[-100:])) * 100 if len(successes) >= 100 else None
+        final_100_mean_reward = float(np.mean(episode_rewards[-100:])) if len(episode_rewards) >= 100 else None
     else:
         success_rate = 0.0
         mean_reward = 0.0
@@ -683,6 +693,7 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
         max_reward = 0.0
         min_reward = 0.0
         final_100_success_rate = None
+        final_100_mean_reward = None
 
     return TrainingResult(
         success_rate=success_rate,
@@ -692,7 +703,10 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
         min_reward=min_reward,
         first_success_episode=diagnostics.first_success_episode,
         final_100_success_rate=final_100_success_rate,
+        final_100_mean_reward=final_100_mean_reward,
         total_episodes=completed_episodes,
+        total_successes=diagnostics.success_count,
+        max_consecutive_successes=diagnostics.max_streak,
         elapsed_time=elapsed_time,
         user_quit=user_quit,
         error=error_occurred,

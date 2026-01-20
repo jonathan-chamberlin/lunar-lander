@@ -26,6 +26,10 @@ class TrainingResult:
     user_quit: bool
     error: Optional[str]
     diagnostics: "DiagnosticsTracker"
+    # Additional reporting metrics
+    total_successes: int = 0
+    max_consecutive_successes: int = 0
+    final_100_mean_reward: Optional[float] = None
 
     def to_sweep_dict(self) -> Dict[str, Any]:
         """Convert to dict format expected by sweep_runner.
@@ -42,6 +46,9 @@ class TrainingResult:
             'min_reward': self.min_reward,
             'first_success_episode': self.first_success_episode,
             'final_100_success_rate': self.final_100_success_rate,
+            'final_100_mean_reward': self.final_100_mean_reward,
+            'total_successes': self.total_successes,
+            'max_consecutive_successes': self.max_consecutive_successes,
             'elapsed_time': self.elapsed_time,
             'user_quit': self.user_quit,
             'error': self.error,

@@ -19,12 +19,16 @@ concluded:
 -
 
 ### Dependent (what you're measuring)
-- Total number of successes
-- Success rate (percentage of episodes that were successes)
+
+**Standard metrics (ALWAYS report these):**
+- Success rate (%)
 - Max consecutive successes
-- Env reward
 - First success episode
-- Final 100 success rate
+- Final 100 success rate (%)
+- Run time (seconds)
+- Total successes
+- Average env reward
+- Final 100 average env reward
 
 ### Controlled (what stays fixed)
 -
@@ -44,6 +48,7 @@ Make specific, falsifiable predictions before running:
   "name": "experiment_name",
   "type": "grid",
   "episodes_per_run": 500,
+  "num_runs_per_config": 1,
   "parameters": {
   }
 }
@@ -57,6 +62,7 @@ Make specific, falsifiable predictions before running:
 - **Charts folder:** `charts/`
 - **Episodes per run:**
 - **Number of configurations:**
+- **Runs per configuration:**
 - **Total runs:**
 
 ## Results
@@ -65,9 +71,9 @@ Make specific, falsifiable predictions before running:
 
 ### Summary Table
 
-| Config | Total Successes | Success Rate | Max Consecutive | Env Reward | First Success | Final 100 |
-|--------|-----------------|--------------|-----------------|------------|---------------|-----------|
-| | | | | | | |
+| Run | Config | Success % | Max Consec | First Success | Final 100 % | Time | Total Successes | Avg Reward | Final 100 Reward |
+|-----|--------|-----------|------------|---------------|-------------|------|-----------------|------------|------------------|
+| 1 | | | | | | | | | |
 
 ### Best Configuration
 

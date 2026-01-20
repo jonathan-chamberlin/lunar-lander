@@ -171,7 +171,7 @@ def run_training_with_config(
         run_name=run_name,
         require_pygame=(config.run.render_mode != 'none'),
         enable_logging=False,
-        save_model=False,
+        save_model=True,
         show_final_charts=False,
         is_experiment=True,  # Skip periodic chart generation
     )
@@ -240,10 +240,6 @@ def run_sweep(
     # Create charts directory
     charts_dir = results_dir.parent / 'charts' if output_dir else results_dir / 'charts'
     charts_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save sweep config
-    with open(results_dir / 'sweep_config.json', 'w') as f:
-        json.dump(sweep_config, f, indent=2)
 
     # Create base config with reduced episodes for sweep
     base_config = Config()
