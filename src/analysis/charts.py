@@ -30,11 +30,21 @@ class ChartGenerator:
     Args:
         tracker: DiagnosticsTracker containing collected training data
         batch_size: Number of episodes per batch for aggregation (default: 50)
+        experiment_name: Optional experiment name for chart title (experiments only)
+        config_str: Optional configuration string for chart title (experiments only)
     """
 
-    def __init__(self, tracker: DiagnosticsTracker, batch_size: int = 50) -> None:
+    def __init__(
+        self,
+        tracker: DiagnosticsTracker,
+        batch_size: int = 50,
+        experiment_name: Optional[str] = None,
+        config_str: Optional[str] = None
+    ) -> None:
         self.tracker = tracker
         self.batch_size = batch_size
+        self.experiment_name = experiment_name
+        self.config_str = config_str
 
     # =========================================================================
     # Main Public Methods
@@ -160,7 +170,13 @@ class ChartGenerator:
             figsize=(12.5, 6.5),
             constrained_layout=True
         )
-        fig.suptitle(f'Training Progress - {num_episodes} Episodes', fontsize=12, fontweight='bold')
+
+        # Build title: use experiment info if provided, otherwise default
+        if self.experiment_name and self.config_str:
+            title = f'Training Progress, {self.experiment_name}, {self.config_str} - {num_episodes} Episodes'
+        else:
+            title = f'Training Progress - {num_episodes} Episodes'
+        fig.suptitle(title, fontsize=12, fontweight='bold')
 
         # Chart configurations: (axes_position, plot_method, chart_name)
         chart_configs = [

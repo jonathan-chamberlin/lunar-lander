@@ -453,13 +453,23 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
         aggregate_writer = AggregateWriter(sim_dir.aggregates_path, write_interval=100)
         training_context.run_logger = run_logger
 
-        charts_folder = str(sim_dir.charts_path)
         text_folder = str(sim_dir.text_path)
         run_folder = str(sim_dir.root_path)
         logger.info(f"Created simulation directory: {run_folder}")
 
-    # Override with explicit directories from options
-    if options.charts_dir is not None:
+        # For normal runs (not experiments), save charts to logs/{timestamp}/ folder
+        # logs/ is at project root (lunar-lander/logs), not src/logs
+        if not options.is_experiment:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+            project_root = Path(script_dir).parent
+            run_charts_folder = project_root / "logs" / timestamp
+            run_charts_folder.mkdir(parents=True, exist_ok=True)
+            charts_folder = str(run_charts_folder)
+
+    # Override with explicit directories from options (but not for experiments -
+    # experiments generate charts separately at the end via sweep_runner)
+    if options.charts_dir is not None and not options.is_experiment:
         charts_folder = str(options.charts_dir)
         Path(charts_folder).mkdir(parents=True, exist_ok=True)
     if options.results_dir is not None:

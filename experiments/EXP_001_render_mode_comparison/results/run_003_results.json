@@ -1,0 +1,14 @@
+{
+  "total_episodes": 1500,
+  "success_rate": 0.0,
+  "mean_reward": -223.0159926109314,
+  "std_reward": 118.58103099863948,
+  "max_reward": -28.151655197143555,
+  "min_reward": -1489.4962158203125,
+  "first_success_episode": null,
+  "final_100_success_rate": 0.0,
+  "elapsed_time": 10805.975604772568,
+  "user_quit": false,
+  "error": null,
+  "run_name": "run_003"
+}

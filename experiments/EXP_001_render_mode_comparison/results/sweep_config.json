@@ -1,7 +1,8 @@
 {
   "name": "render_mode_comparison",
   "type": "grid",
-  "episodes_per_run": 3000,
+  "episodes_per_run": 1500,
+  "num_runs_per_config": 2,
   "parameters": {
     "render_mode": [
       "all",

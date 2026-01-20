@@ -31,3 +31,6 @@ class TrainingOptions:
 
     # Pygame control
     require_pygame: bool = True  # False = skip pygame init for headless
+
+    # Experiment mode (affects chart generation)
+    is_experiment: bool = False  # True = only generate final chart, skip periodic

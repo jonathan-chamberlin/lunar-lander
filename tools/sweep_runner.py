@@ -139,7 +139,9 @@ def run_training_with_config(
     config: Config,
     run_name: str,
     results_dir: Path,
-    charts_dir: Optional[Path] = None
+    charts_dir: Optional[Path] = None,
+    experiment_name: Optional[str] = None,
+    params: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Run training with a specific configuration and collect results.
 
@@ -152,6 +154,8 @@ def run_training_with_config(
         run_name: Name for this run
         results_dir: Directory to save results
         charts_dir: Directory to save charts (if None, no charts generated)
+        experiment_name: Optional name of the experiment for chart titles
+        params: Optional dict of configuration parameters for chart titles
 
     Returns:
         Dict with training results
@@ -163,12 +167,13 @@ def run_training_with_config(
     options = TrainingOptions(
         output_mode='background',
         results_dir=results_dir,
-        charts_dir=charts_dir,
+        charts_dir=None,  # Charts generated separately at end of run
         run_name=run_name,
         require_pygame=(config.run.render_mode != 'none'),
         enable_logging=False,
         save_model=False,
         show_final_charts=False,
+        is_experiment=True,  # Skip periodic chart generation
     )
 
     result = run_training(config, options)
@@ -186,7 +191,21 @@ def run_training_with_config(
     if charts_dir is not None:
         charts_dir.mkdir(parents=True, exist_ok=True)
         chart_path = charts_dir / f"{run_name}_chart.png"
-        chart_generator = ChartGenerator(result.diagnostics)
+
+        # Build config string for chart title (e.g., "render_mode='all'")
+        config_str = None
+        if params:
+            # Filter out internal params (prefixed with _)
+            display_params = {k: v for k, v in params.items() if not k.startswith('_')}
+            if display_params:
+                config_str = ", ".join(f"{k}='{v}'" if isinstance(v, str) else f"{k}={v}"
+                                       for k, v in display_params.items())
+
+        chart_generator = ChartGenerator(
+            result.diagnostics,
+            experiment_name=experiment_name,
+            config_str=config_str
+        )
         if chart_generator.generate_to_file(str(chart_path)):
             print(f"  Chart saved to: {chart_path}")
 
@@ -287,7 +306,10 @@ def run_sweep(
         print('='*60)
 
         try:
-            results = run_training_with_config(config, run_name, results_dir, charts_dir)
+            results = run_training_with_config(
+                config, run_name, results_dir, charts_dir,
+                experiment_name=sweep_name, params=params
+            )
             results['parameters'] = params
             all_results.append(results)
 
@@ -388,7 +410,21 @@ def main():
         sys.exit(1)
 
     sweep_config = load_sweep_config(config_path)
-    output_dir = Path(args.output_dir) if args.output_dir else None
+
+    # Determine output directory
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        # Auto-detect if config is in an experiments folder
+        config_path_obj = Path(config_path).resolve()
+        if 'experiments' in config_path_obj.parts:
+            # Config is in experiments folder - use that experiment's results folder
+            experiment_dir = config_path_obj.parent
+            output_dir = experiment_dir / 'results'
+            print(f"Auto-detected experiment folder: {experiment_dir}")
+        else:
+            output_dir = None
+
     run_sweep(sweep_config, dry_run=args.dry_run, output_dir=output_dir)
 
 
