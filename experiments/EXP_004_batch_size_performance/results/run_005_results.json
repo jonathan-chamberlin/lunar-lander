@@ -1,0 +1,17 @@
+{
+  "total_episodes": 404,
+  "success_rate": 8.88888888888889,
+  "mean_reward": -38.53128654709925,
+  "std_reward": 192.36185104934273,
+  "max_reward": 284.6864967659838,
+  "min_reward": -778.0518540745443,
+  "first_success_episode": 145,
+  "final_100_success_rate": 21.0,
+  "final_100_mean_reward": 101.11842434880509,
+  "total_successes": 36,
+  "max_consecutive_successes": 4,
+  "elapsed_time": 2002.5864889621735,
+  "user_quit": false,
+  "error": "RuntimeError: [enforce fail at alloc_cpu.cpp:121] data. DefaultCPUAllocator: not enough memory: you tried to allocate 12288 bytes.",
+  "run_name": "run_005"
+}

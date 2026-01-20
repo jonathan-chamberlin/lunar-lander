@@ -225,6 +225,11 @@ class TD3Trainer:
         # Compute average Q-value for diagnostics
         avg_q = ((current_q1.mean() + current_q2.mean()) / 2.0).item()
 
+        # Explicit tensor cleanup to prevent memory fragmentation
+        del states, actions, rewards, next_states, dones, weights
+        del current_q1, current_q2, target_q_value
+        del elementwise_loss_1, elementwise_loss_2, critic_loss_1, critic_loss_2
+
         return TrainingMetrics(
             critic_loss=critic_loss,
             actor_loss=actor_loss,

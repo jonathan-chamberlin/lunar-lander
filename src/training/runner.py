@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 import numpy as np
+import psutil
 import torch as T
 
 from config import Config
@@ -37,6 +38,16 @@ if TYPE_CHECKING:
     from models import EpisodeData, TimingState, TrainingContext, PyGameContext
 
 logger = logging.getLogger(__name__)
+
+# Memory monitoring constants
+MEMORY_LOG_INTERVAL = 50  # Log memory usage every N episodes
+MEMORY_LIMIT_MB = 1500  # Trigger emergency GC if memory exceeds this threshold
+
+
+def get_memory_mb() -> float:
+    """Get current process memory usage in megabytes."""
+    return psutil.Process().memory_info().rss / 1024 / 1024
+
 
 # Module-level behavior analyzer instance
 behavior_analyzer = BehaviorAnalyzer()
@@ -489,7 +500,7 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
     if options.results_dir is not None:
         Path(options.results_dir).mkdir(parents=True, exist_ok=True)
 
-    MAINTENANCE_INTERVAL = 100
+    MAINTENANCE_INTERVAL = 25  # Reduced from 100 to prevent memory fragmentation
 
     try:
         with create_environments(config.run, config.environment) as env_bundle:
@@ -515,6 +526,24 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                     logger.debug(f"GC at episode {completed_episodes}: before={gc_counts_before}, after={gc_counts_after}")
                     if T.cuda.is_available():
                         T.cuda.empty_cache()
+
+                # Periodic memory monitoring
+                if completed_episodes > 0 and completed_episodes % MEMORY_LOG_INTERVAL == 0:
+                    memory_mb = get_memory_mb()
+                    logger.info(f"Memory usage at episode {completed_episodes}: {memory_mb:.1f} MB")
+
+                # Memory threshold safeguard - emergency GC if memory too high
+                current_memory = get_memory_mb()
+                if current_memory > MEMORY_LIMIT_MB:
+                    logger.warning(
+                        f"Memory threshold exceeded ({current_memory:.1f} MB > {MEMORY_LIMIT_MB} MB), "
+                        f"forcing garbage collection at episode {completed_episodes}"
+                    )
+                    gc.collect()
+                    if T.cuda.is_available():
+                        T.cuda.empty_cache()
+                    post_gc_memory = get_memory_mb()
+                    logger.info(f"Post-GC memory: {post_gc_memory:.1f} MB (freed {current_memory - post_gc_memory:.1f} MB)")
 
                 # Determine if this episode should be rendered
                 should_render = completed_episodes in env_bundle.render_episodes and pygame_ctx is not None
