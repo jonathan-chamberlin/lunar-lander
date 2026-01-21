@@ -233,6 +233,62 @@ Ideas for future experiments, organized by category. Parameter values chosen bas
 
 ---
 
+### EXP_012: Reward Shaping Ablation
+
+**Hypothesis:** Some reward shaping components may be harmful to learning by creating local optima or conflicting gradients; a minimal shaping approach may outperform the full shaping function.
+
+**Reasoning:**
+- Current shaping has 4 per-step bonuses: time penalty, altitude bonus, leg contact bonus, stability bonus
+- Each bonus adds learning signal but also risk of reward hacking or local optima
+- Time penalty: Could rush agent into crashes, or helpfully discourage hovering
+- Altitude bonus: Could cause diving behavior, or help guide descent
+- Leg contact bonus: Could encourage premature landing attempts, or provide crucial signal
+- Stability bonus: Could distract from position/velocity control, or improve final landings
+- Testing all 2^4 = 16 combinations reveals which components actually help
+
+**Current reward shaping components:**
+```
+1. time_penalty:    -0.05 per step (discourages hovering)
+2. altitude_bonus:  +0.5 when y_pos < 0.25 AND descending (guides to ground)
+3. leg_contact:     +2/+5 for one/both legs AND descending (rewards contact)
+4. stability:       +0.3/+0.1 for |angle| < 0.1/0.2 AND descending (rewards upright)
+
+(Terminal landing bonus +100 always enabled - this is the goal signal)
+```
+
+**Config parameters (booleans):**
+- `reward_time_penalty`: Enable -0.05/step penalty
+- `reward_altitude_bonus`: Enable +0.5 close-to-ground bonus
+- `reward_leg_contact`: Enable +2/+5 leg contact bonuses
+- `reward_stability`: Enable +0.3/+0.1 upright bonuses
+
+```json
+{
+  "name": "reward_shaping_ablation",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 2,
+  "parameters": {
+    "reward_time_penalty": [false, true],
+    "reward_altitude_bonus": [false, true],
+    "reward_leg_contact": [false, true],
+    "reward_stability": [false, true]
+  }
+}
+```
+
+**Note:** 2^4 = 16 configs × 2 runs = 32 total runs. This is a large experiment but essential for understanding which shaping signals help.
+
+**Key configurations to watch:**
+- `[false, false, false, false]`: No shaping (baseline - pure env reward)
+- `[true, true, true, true]`: Full shaping (current default)
+- `[true, false, false, false]`: Only time penalty
+- `[false, false, true, false]`: Only leg contact (most direct landing signal)
+
+**Measure:** Success rate, first success episode, final-100 success rate, learning stability
+
+---
+
 ## Priority Queue
 
 Experiments ordered by expected impact on performance:

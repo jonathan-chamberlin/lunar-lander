@@ -50,35 +50,48 @@ class TD3Trainer:
             logger.info("Using CPU (no GPU detected)")
 
         # Initialize networks
+        hidden1, hidden2 = training_config.hidden_sizes
         self.actor = ActorNetwork(
             env_config.state_dim,
-            env_config.action_dim
+            env_config.action_dim,
+            hidden1=hidden1,
+            hidden2=hidden2
         ).to(self.device)
 
         self.critic_1 = CriticNetwork(
             env_config.state_dim,
-            env_config.action_dim
+            env_config.action_dim,
+            hidden1=hidden1,
+            hidden2=hidden2
         ).to(self.device)
 
         self.critic_2 = CriticNetwork(
             env_config.state_dim,
-            env_config.action_dim
+            env_config.action_dim,
+            hidden1=hidden1,
+            hidden2=hidden2
         ).to(self.device)
 
         # Initialize target networks
         self.target_actor = ActorNetwork(
             env_config.state_dim,
-            env_config.action_dim
+            env_config.action_dim,
+            hidden1=hidden1,
+            hidden2=hidden2
         ).to(self.device)
 
         self.target_critic_1 = CriticNetwork(
             env_config.state_dim,
-            env_config.action_dim
+            env_config.action_dim,
+            hidden1=hidden1,
+            hidden2=hidden2
         ).to(self.device)
 
         self.target_critic_2 = CriticNetwork(
             env_config.state_dim,
-            env_config.action_dim
+            env_config.action_dim,
+            hidden1=hidden1,
+            hidden2=hidden2
         ).to(self.device)
 
         # Copy weights to target networks
@@ -263,6 +276,10 @@ class TD3Trainer:
             if batch.indices is not None:
                 priorities = td_errors.cpu().numpy() + self.config.per_epsilon
                 replay_buffer.update_priorities(batch.indices, priorities)
+                del priorities
+
+            # Explicit cleanup to prevent memory accumulation
+            del batch, td_errors
 
         return AggregatedTrainingMetrics.from_metrics_list(metrics_list)
 

@@ -1,0 +1,17 @@
+{
+  "total_episodes": 500,
+  "success_rate": 6.0,
+  "mean_reward": -178.2533835170287,
+  "std_reward": 288.3081919506581,
+  "max_reward": 279.9864450689263,
+  "min_reward": -1854.9530000745103,
+  "first_success_episode": 433,
+  "final_100_success_rate": 30.0,
+  "final_100_mean_reward": 81.42629614920294,
+  "total_successes": 30,
+  "max_consecutive_successes": 7,
+  "elapsed_time": 713.1547684669495,
+  "user_quit": false,
+  "error": null,
+  "run_name": "run_002"
+}

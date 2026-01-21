@@ -76,8 +76,9 @@ class DisplayConfig:
 class TrainingConfig:
     """Hyperparameters for TD3 training."""
 
-    actor_lr: float = 0.001  # Increased from 0.0005 for faster learning
-    critic_lr: float = 0.002  # Increased from 0.001 (2x actor)
+    actor_lr: float = 0.001  # EXP_009: 1:1 ratio optimal (68% final-100)
+    critic_lr: float = 0.001  # EXP_009: Equal LRs beat 2:1 ratio (47.5% → 68%)
+    hidden_sizes: Tuple[int, int] = (64, 32)  # Network hidden layer sizes [h1, h2] (EXP_006: 2x faster, same performance)
     gamma: float = 0.99
     tau: float = 0.005
     batch_size: int = 128  # Reduced from 256 for faster iterations

@@ -4,6 +4,6 @@
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "update_every_n_steps": [1, 2, 4, 8]
+    "training_updates_per_episode": [5, 10, 25, 50]
   }
 }

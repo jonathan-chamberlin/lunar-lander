@@ -1,0 +1,9 @@
+{
+  "name": "network_size_performance",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 2,
+  "parameters": {
+    "hidden_sizes": [[16, 16], [64, 32], [128, 64], [256, 128]]
+  }
+}

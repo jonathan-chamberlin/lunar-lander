@@ -13,6 +13,7 @@ import argparse
 import json
 import itertools
 import os
+import subprocess
 import sys
 from dataclasses import replace
 from datetime import datetime
@@ -29,6 +30,46 @@ def load_sweep_config(config_path: str) -> Dict[str, Any]:
     """Load sweep configuration from JSON file."""
     with open(config_path, 'r') as f:
         return json.load(f)
+
+
+def get_completed_runs(results_dir: Path) -> Dict[int, Dict[str, Any]]:
+    """Scan results directory for completed runs.
+
+    A run is considered complete if:
+    1. Its results JSON file exists (run_NNN_results.json)
+    2. The 'error' field is null/None (not a crash)
+
+    Args:
+        results_dir: Path to results directory
+
+    Returns:
+        Dict mapping run index (1-based) to results dict for completed runs
+    """
+    completed = {}
+
+    if not results_dir.exists():
+        return completed
+
+    for results_file in results_dir.glob("run_*_results.json"):
+        # Extract run number from filename (e.g., "run_001_results.json" -> 1)
+        try:
+            run_num = int(results_file.stem.split('_')[1])
+        except (IndexError, ValueError):
+            continue
+
+        # Load and check if run completed successfully
+        try:
+            with open(results_file, 'r') as f:
+                results = json.load(f)
+
+            # Run is complete if error is null and it ran all episodes
+            if results.get('error') is None:
+                completed[run_num] = results
+
+        except (json.JSONDecodeError, IOError):
+            continue
+
+    return completed
 
 
 def generate_grid_configs(
@@ -212,10 +253,92 @@ def run_training_with_config(
     return results
 
 
+def run_training_subprocess(
+    params: Dict[str, Any],
+    run_name: str,
+    results_dir: Path,
+    charts_dir: Optional[Path] = None,
+    experiment_name: Optional[str] = None,
+    episodes_per_run: int = 500
+) -> Dict[str, Any]:
+    """Run training in a subprocess for memory isolation.
+
+    Each run executes in a fresh Python process, ensuring complete memory
+    cleanup between runs. This prevents memory leaks from accumulating.
+
+    Args:
+        params: Parameter overrides for this run
+        run_name: Name for this run (e.g., "run_001")
+        results_dir: Directory to save results
+        charts_dir: Directory to save charts
+        experiment_name: Name of the experiment
+        episodes_per_run: Number of episodes to run
+
+    Returns:
+        Dict with training results (loaded from results JSON)
+    """
+    import tempfile
+
+    # Create temp config file for subprocess
+    run_config = {
+        'params': {k: v for k, v in params.items() if not k.startswith('_')},
+        'run_name': run_name,
+        'results_dir': str(results_dir),
+        'episodes': episodes_per_run
+    }
+
+    # Write config to temp file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(run_config, f)
+        config_file = f.name
+
+    try:
+        # Build command
+        runner_script = Path(__file__).parent / "run_single_training.py"
+        cmd = [sys.executable, str(runner_script), config_file]
+
+        # Run in subprocess (inherit stdout/stderr to show progress)
+        print(f"  Subprocess: python run_single_training.py ...")
+        result = subprocess.run(
+            cmd,
+            cwd=str(Path(__file__).parent.parent / "src")
+        )
+
+        if result.returncode != 0:
+            return {
+                'run_name': run_name,
+                'parameters': params,
+                'error': f"Subprocess failed with code {result.returncode}"
+            }
+
+        # Load results from saved JSON
+        results_file = results_dir / f"{run_name}_results.json"
+        if results_file.exists():
+            with open(results_file, 'r') as f:
+                results = json.load(f)
+            results['parameters'] = params
+            return results
+        else:
+            return {
+                'run_name': run_name,
+                'parameters': params,
+                'error': "Results file not created"
+            }
+
+    finally:
+        # Clean up temp file
+        try:
+            os.unlink(config_file)
+        except OSError:
+            pass
+
+
 def run_sweep(
     sweep_config: Dict[str, Any],
     dry_run: bool = False,
-    output_dir: Optional[Path] = None
+    output_dir: Optional[Path] = None,
+    resume: bool = False,
+    use_subprocess: bool = False
 ) -> List[Dict[str, Any]]:
     """Execute a hyperparameter sweep.
 
@@ -223,6 +346,9 @@ def run_sweep(
         sweep_config: Sweep configuration dict
         dry_run: If True, only print configurations without running
         output_dir: Custom output directory. If None, uses sweep_results/<name>_<timestamp>
+        resume: If True, skip completed runs
+        use_subprocess: If True, run each training in a separate subprocess for memory isolation
+        resume: If True, skip runs that have already completed successfully
 
     Returns:
         List of result dicts from each run
@@ -284,34 +410,74 @@ def run_sweep(
     print(f"Generated {len(configs)} configurations for sweep '{sweep_name}'")
     print(f"Results will be saved to: {results_dir}")
 
+    # Check for completed runs if resuming
+    completed_runs: Dict[int, Dict[str, Any]] = {}
+    if resume:
+        completed_runs = get_completed_runs(results_dir)
+        if completed_runs:
+            print(f"\n=== RESUME MODE ===")
+            print(f"Found {len(completed_runs)} completed runs: {sorted(completed_runs.keys())}")
+            remaining = len(configs) - len(completed_runs)
+            print(f"Runs remaining: {remaining}")
+        else:
+            print(f"\n=== RESUME MODE === (no completed runs found, starting fresh)")
+
     if dry_run:
         print("\n=== DRY RUN - Configurations to test ===")
         for i, (params, _) in enumerate(configs):
-            print(f"  Run {i+1}: {params}")
+            run_idx = i + 1
+            status = "[SKIP - completed]" if run_idx in completed_runs else "[PENDING]"
+            print(f"  Run {run_idx}: {params} {status}")
         return []
 
     # Run each configuration
-    all_results = []
+    all_results: List[Dict[str, Any]] = []
     for i, (params, config) in enumerate(configs):
-        run_name = f"run_{i+1:03d}"
+        run_idx = i + 1
+
+        # Skip completed runs when resuming
+        if run_idx in completed_runs:
+            print(f"\n[SKIP] Run {run_idx:03d} already completed (success_rate: {completed_runs[run_idx].get('success_rate', 'N/A')}%)")
+            all_results.append(completed_runs[run_idx])
+            continue
+        run_name = f"run_{run_idx:03d}"
         param_str = "_".join(f"{k}={v}" for k, v in params.items())
+
+        # Calculate progress accounting for skipped runs
+        completed_count = len([r for r in all_results if 'error' not in r or r.get('error') is None])
+        remaining = len(configs) - completed_count - 1  # -1 for current run
 
         print(f"\n{'='*60}")
         print(f"Running {run_name}: {param_str}")
-        print(f"Progress: {i+1}/{len(configs)}")
+        print(f"Progress: {run_idx}/{len(configs)} ({remaining} remaining after this)")
+        if use_subprocess:
+            print("  [SUBPROCESS MODE - memory isolated]")
         print('='*60)
 
         try:
-            results = run_training_with_config(
-                config, run_name, results_dir, charts_dir,
-                experiment_name=sweep_name, params=params
-            )
-            results['parameters'] = params
+            if use_subprocess:
+                # Run in subprocess for memory isolation
+                results = run_training_subprocess(
+                    params, run_name, results_dir, charts_dir,
+                    experiment_name=sweep_name,
+                    episodes_per_run=episodes_per_run
+                )
+            else:
+                # Run in-process (faster but may leak memory)
+                results = run_training_with_config(
+                    config, run_name, results_dir, charts_dir,
+                    experiment_name=sweep_name, params=params
+                )
+                results['parameters'] = params
+
             all_results.append(results)
 
-            print(f"  Success rate: {results['success_rate']:.1f}%")
-            print(f"  Mean reward: {results['mean_reward']:.1f}")
-            print(f"  Time: {results['elapsed_time']:.1f}s")
+            if 'error' not in results:
+                print(f"  Success rate: {results['success_rate']:.1f}%")
+                print(f"  Mean reward: {results['mean_reward']:.1f}")
+                print(f"  Time: {results['elapsed_time']:.1f}s")
+            else:
+                print(f"  ERROR: {results['error']}")
 
         except Exception as e:
             print(f"  ERROR: {e}")
@@ -389,6 +555,10 @@ def main():
     parser.add_argument('config', nargs='?', help='Path to sweep config JSON file')
     parser.add_argument('--config', '-c', dest='config_flag', help='Path to sweep config JSON file')
     parser.add_argument('--dry-run', action='store_true', help='Print configurations without running')
+    parser.add_argument('--resume', '-r', action='store_true',
+                        help='Resume incomplete sweep, skipping successfully completed runs')
+    parser.add_argument('--subprocess', '-s', action='store_true',
+                        help='Run each training in a separate subprocess for memory isolation (slower but prevents leaks)')
     parser.add_argument('--output-dir', '-o', dest='output_dir',
                         help='Custom output directory for results (e.g., experiments/EXP_001/results)')
 
@@ -421,7 +591,7 @@ def main():
         else:
             output_dir = None
 
-    run_sweep(sweep_config, dry_run=args.dry_run, output_dir=output_dir)
+    run_sweep(sweep_config, dry_run=args.dry_run, output_dir=output_dir, resume=args.resume, use_subprocess=args.subprocess)
 
 
 if __name__ == '__main__':

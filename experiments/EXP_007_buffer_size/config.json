@@ -1,0 +1,9 @@
+{
+  "name": "buffer_size",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 2,
+  "parameters": {
+    "buffer_size": [4096, 8192, 16384, 65536]
+  }
+}

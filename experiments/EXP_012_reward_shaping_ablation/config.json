@@ -1,0 +1,12 @@
+{
+  "name": "reward_shaping_ablation",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 2,
+  "parameters": {
+    "time_penalty": [false, true],
+    "altitude_bonus": [false, true],
+    "leg_contact": [false, true],
+    "stability": [false, true]
+  }
+}
