@@ -44,12 +44,12 @@ Some reward shaping components may be harmful to learning by creating local opti
 
 ### Controlled (what stays fixed)
 - Terminal landing bonus: +100 (always enabled - this is the goal signal)
-- batch_size: 32 (from EXP_004)
-- buffer_size: 16384
-- actor_lr: 0.001
-- critic_lr: 0.002
+- batch_size: 128
+- buffer_size: 16384 (from EXP_007)
+- actor_lr: 0.001 (from EXP_009)
+- critic_lr: 0.001 (from EXP_009 - 1:1 ratio optimal)
 - tau: 0.005
-- hidden_sizes: [256, 128]
+- hidden_sizes: [64, 32] (from EXP_006)
 - noise_decay_episodes: 300
 - max_episode_steps: 1000
 - episodes_per_run: 500
