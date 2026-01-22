@@ -8,7 +8,7 @@ from typing import Generator, Set
 import gymnasium as gym
 import numpy as np
 
-from config import RunConfig, EnvironmentConfig
+from config import RunConfig, EnvironmentConfig, RewardShapingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +49,14 @@ def create_environments(
 
     # Create environment with appropriate render mode
     if should_render:
-        env = gym.make(env_config.env_name, render_mode="rgb_array")
+        env = gym.make(env_config.env_name, render_mode="rgb_array",
+                       max_episode_steps=env_config.max_episode_steps)
         if run_config.framerate is not None:
             env.metadata["render_fps"] = run_config.framerate
-        logger.info("Created environment with rgb_array rendering")
+        logger.info(f"Created environment with rgb_array rendering (max_steps={env_config.max_episode_steps})")
     else:
-        env = gym.make(env_config.env_name)
-        logger.info("Created environment without rendering (headless mode)")
+        env = gym.make(env_config.env_name, max_episode_steps=env_config.max_episode_steps)
+        logger.info(f"Created environment without rendering (max_steps={env_config.max_episode_steps})")
 
     bundle = EnvironmentBundle(
         env=env,
@@ -74,24 +75,26 @@ def shape_reward(
     state: np.ndarray,
     base_reward: float,
     terminated: bool,
+    config: RewardShapingConfig,
     step: int = 0
 ) -> float:
-    """Apply reward shaping to provide intermediate learning signals.
+    """Apply configurable reward shaping to provide intermediate learning signals.
 
     LunarLander state format:
     [x_pos, y_pos, x_vel, y_vel, angle, angular_vel, leg1_contact, leg2_contact]
 
-    Shaping rewards (gated on descending to prevent hovering):
+    Shaping rewards (configurable, gated on descending to prevent hovering):
     - Time penalty: -0.05 per step (discourages hovering/long episodes)
-    - Bonus for being low (y_pos < 0.25): only if descending
-    - Bonus for leg contact: only if descending
-    - Stability bonus: only if descending
-    - Terminal landing bonus: +100 for successful landing with both legs
+    - Altitude bonus: +0.5 when low (y_pos < 0.25) and descending
+    - Leg contact bonus: +2/+5 for one/both legs when descending
+    - Stability bonus: +0.3/+0.1 for upright when descending
+    - Terminal landing bonus: +100 for successful landing (ALWAYS enabled)
 
     Args:
         state: Current state observation
         base_reward: Original reward from environment
         terminated: Whether episode has terminated (for landing bonus)
+        config: RewardShapingConfig controlling which components are enabled
         step: Current step number in episode (unused, kept for API compatibility)
 
     Returns:
@@ -105,32 +108,33 @@ def shape_reward(
     leg1_contact = state[6]
     leg2_contact = state[7]
 
-    # Time penalty to discourage hovering (-0.05 per step)
-    shaped_reward -= 0.05
+    # Component 1: Time penalty to discourage hovering (-0.05 per step)
+    if config.time_penalty:
+        shaped_reward -= 0.05
 
     # All per-step bonuses ONLY apply if descending (prevents hover exploitation)
     is_descending = y_vel < -0.05
 
     if is_descending:
-        # Reward for being close to ground
-        if y_pos < 0.25:
+        # Component 2: Altitude bonus for being close to ground
+        if config.altitude_bonus and y_pos < 0.25:
             shaped_reward += 0.5
 
-        # Reward for leg contact
-        if (leg1_contact and not leg2_contact) or (not leg1_contact and leg2_contact):
-            shaped_reward += 2
+        # Component 3: Leg contact bonus
+        if config.leg_contact:
+            if leg1_contact and leg2_contact:
+                shaped_reward += 5
+            elif leg1_contact or leg2_contact:
+                shaped_reward += 2
 
-        # Reward for both legs contact
-        if leg1_contact and leg2_contact:
-            shaped_reward += 5
+        # Component 4: Stability bonus for staying upright (angle near 0)
+        if config.stability:
+            if abs(angle) < 0.1:
+                shaped_reward += 0.3
+            elif abs(angle) < 0.2:
+                shaped_reward += 0.1
 
-        # Stability bonus for staying upright (angle near 0)
-        if abs(angle) < 0.1:
-            shaped_reward += 0.3
-        elif abs(angle) < 0.2:
-            shaped_reward += 0.1
-
-    # Terminal landing bonus: big reward for successful landing
+    # Terminal landing bonus: big reward for successful landing (ALWAYS enabled)
     # Successful = terminated with both legs on ground (not a crash)
     # Crashes give -100 from env, landings give +100, so base_reward > 0 means landed
     if terminated and leg1_contact and leg2_contact and base_reward > 0:

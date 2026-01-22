@@ -23,7 +23,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 # Add src directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from config import Config, TrainingConfig, NoiseConfig, RunConfig
+from config import Config, TrainingConfig, NoiseConfig, RunConfig, RewardShapingConfig, EnvironmentConfig
 
 
 def load_sweep_config(config_path: str) -> Dict[str, Any]:
@@ -146,11 +146,15 @@ def apply_params_to_config(config: Config, params: Dict[str, Any]) -> Config:
     training_params = {}
     noise_params = {}
     run_params = {}
+    reward_shaping_params = {}
+    environment_params = {}
 
     # Map parameters to their config sections
     training_fields = set(TrainingConfig.__dataclass_fields__.keys())
     noise_fields = set(NoiseConfig.__dataclass_fields__.keys())
     run_fields = set(RunConfig.__dataclass_fields__.keys())
+    reward_shaping_fields = set(RewardShapingConfig.__dataclass_fields__.keys())
+    environment_fields = set(EnvironmentConfig.__dataclass_fields__.keys())
 
     for name, value in params.items():
         if name in training_fields:
@@ -159,6 +163,10 @@ def apply_params_to_config(config: Config, params: Dict[str, Any]) -> Config:
             noise_params[name] = value
         elif name in run_fields:
             run_params[name] = value
+        elif name in reward_shaping_fields:
+            reward_shaping_params[name] = value
+        elif name in environment_fields:
+            environment_params[name] = value
         else:
             print(f"Warning: Unknown parameter '{name}', ignoring")
 
@@ -166,13 +174,16 @@ def apply_params_to_config(config: Config, params: Dict[str, Any]) -> Config:
     new_training = replace(config.training, **training_params) if training_params else config.training
     new_noise = replace(config.noise, **noise_params) if noise_params else config.noise
     new_run = replace(config.run, **run_params) if run_params else config.run
+    new_reward_shaping = replace(config.reward_shaping, **reward_shaping_params) if reward_shaping_params else config.reward_shaping
+    new_environment = replace(config.environment, **environment_params) if environment_params else config.environment
 
     return Config(
         training=new_training,
         noise=new_noise,
         run=new_run,
-        environment=config.environment,
-        display=config.display
+        environment=new_environment,
+        display=config.display,
+        reward_shaping=new_reward_shaping
     )
 
 

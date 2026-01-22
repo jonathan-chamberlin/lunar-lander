@@ -57,6 +57,7 @@ class EnvironmentConfig:
     state_dim: int = 8
     action_dim: int = 2
     success_threshold: float = 200.0
+    max_episode_steps: int = 1000  # Gymnasium default; shorter caps save compute
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,20 @@ class TrainingConfig:
 
 
 @dataclass(frozen=True)
+class RewardShapingConfig:
+    """Configuration for reward shaping components.
+
+    Each boolean enables/disables a specific reward shaping behavior.
+    Terminal landing bonus (+100) is always enabled as the goal signal.
+    """
+
+    time_penalty: bool = False     # EXP_012: Disabled - hurts learning (16.5% vs 51% with F/T/T/T)
+    altitude_bonus: bool = True    # +0.5 when low and descending
+    leg_contact: bool = True       # +2/+5 for one/both legs when descending
+    stability: bool = True         # +0.3/+0.1 for upright when descending
+
+
+@dataclass(frozen=True)
 class NoiseConfig:
     """Ornstein-Uhlenbeck noise parameters."""
 
@@ -125,5 +140,6 @@ class Config:
     run: RunConfig = field(default_factory=RunConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
+    reward_shaping: RewardShapingConfig = field(default_factory=RewardShapingConfig)
 
 # 

@@ -1,0 +1,9 @@
+{
+  "name": "episode_length_cap",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 2,
+  "parameters": {
+    "max_episode_steps": [400, 600, 800, 1000]
+  }
+}

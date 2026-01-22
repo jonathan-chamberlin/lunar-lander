@@ -312,7 +312,7 @@ def _run_episode(
 
         # Apply reward shaping (IDENTICAL for both modes)
         current_step = len(rewards)
-        shaped_reward = shape_reward(obs, reward, terminated, step=current_step)
+        shaped_reward = shape_reward(obs, reward, terminated, config.reward_shaping, step=current_step)
         shaped_bonus += (shaped_reward - reward)
 
         # Store experience (IDENTICAL for both modes)
