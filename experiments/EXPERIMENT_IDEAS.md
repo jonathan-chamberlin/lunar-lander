@@ -2,305 +2,347 @@
 
 Ideas for future experiments, organized by category. Parameter values chosen based on first-principles reasoning against current defaults.
 
-**Current Defaults (from config.py):**
-- batch_size: 128
-- buffer_size: 16384
-- actor_lr: 0.001, critic_lr: 0.002
-- tau: 0.005
-- hidden layers: [256, 128]
+**Current Optimal Defaults (validated by experiments):**
+- batch_size: 128 (EXP_004: 32 fastest start, 256 best final)
+- buffer_size: 16384 (EXP_007: optimal; larger catastrophically fails)
+- actor_lr: 0.001 (EXP_009: 1:1 ratio optimal)
+- critic_lr: 0.001 (EXP_009: equal LRs beat 2:1 ratio)
+- tau: 0.005 (default, EXP_010 testing)
+- gamma: 0.99 (default, untested)
+- hidden_sizes: [64, 32] (EXP_006: 2x faster, same performance)
+- training_updates_per_episode: 25 (EXP_005: 10 optimal but 25 is default)
 - noise_decay_episodes: 300
-- max_episode_steps: 1000
+- time_penalty: False (EXP_012: hurts learning)
+- altitude_bonus: True (EXP_012: part of optimal F/T/T/T)
+- leg_contact: True (EXP_012: part of optimal F/T/T/T)
+- stability: True (EXP_012: part of optimal F/T/T/T)
 
 ---
 
-## Performance Optimization Experiments
+## Completed Experiments
 
-### EXP_004: Batch Size vs Training Speed
+| ID | Parameter | Key Finding |
+|----|-----------|-------------|
+| EXP_004 | batch_size | 128 fails; 32 fastest, 256 best final |
+| EXP_005 | training_updates_per_episode | 10 optimal; 50 highly unstable |
+| EXP_006 | hidden_sizes | [64,32] matches [256,128] while 2x faster |
+| EXP_007 | buffer_size | 16384 optimal; 65536 catastrophic |
+| EXP_009 | actor_lr, critic_lr | 1:1 ratio (0.001/0.001) optimal; actor>critic catastrophic |
+| EXP_012 | reward shaping | F/T/T/T (no time penalty) best at 51% |
 
-**Hypothesis:** Smaller batch sizes may improve learning in RL by providing more frequent, noisier gradient updates that help escape local minima.
+---
+
+## Planned Experiments
+
+### EXP_010: Tau Sweep
+
+**Status:** PLANNED
+
+**Hypothesis:** The default tau=0.005 may not be optimal; different soft update coefficients could improve stability or speed.
+
+**Values:** [0.001, 0.003, 0.005, 0.01, 0.02, 0.05]
+
+See `EXP_010_tau_sweep/EXPERIMENT.md` for full details.
+
+---
+
+## Future Experiment Ideas
+
+### EXP_013: Gamma (Discount Factor) Sweep
+
+**Hypothesis:** The default gamma=0.99 may be suboptimal for LunarLander's episodic structure; different values could change the exploration/exploitation balance.
 
 **Reasoning:**
-- Unlike supervised learning, larger batches aren't always better in RL
-- Smaller batches = more frequent updates = faster adaptation to new experiences
-- Current default (128) is mid-range; test both smaller and larger
-- 512+ is likely overkill for this simple 8-state environment
+- Gamma controls how much future rewards are valued vs immediate rewards
+- gamma=0.99: Values rewards ~100 steps out significantly (0.99^100 ≈ 0.37)
+- gamma=0.95: Horizon shrinks to ~20 steps (0.95^20 ≈ 0.36)
+- gamma=0.999: Very long horizon, almost no discounting
+- LunarLander episodes typically 200-400 steps for successful landings
+- Lower gamma might encourage faster, more decisive actions
+- Higher gamma might improve long-term planning but slow learning
+
+**First Principles Analysis:**
+- Effective horizon = 1 / (1 - gamma)
+  - gamma=0.9 → 10 step horizon
+  - gamma=0.95 → 20 step horizon
+  - gamma=0.99 → 100 step horizon
+  - gamma=0.999 → 1000 step horizon
+- For LunarLander, the +100 landing reward is the key signal
+- Too low gamma: Agent may not "see" the landing reward from starting altitude
+- Too high gamma: TD targets become very high variance (bootstrapping compounds errors)
+
+**Values to test:** [0.9, 0.95, 0.99, 0.995, 0.999]
 
 ```json
 {
-  "name": "batch_size_performance",
+  "name": "gamma_sweep",
   "type": "grid",
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "batch_size": [32, 64, 128, 256]
+    "gamma": [0.9, 0.95, 0.99, 0.995, 0.999]
   }
 }
 ```
 
-**Measure:** Episodes/second, success rate, learning stability
+**Predictions:**
+- gamma=0.9 will fail (horizon too short to see landing reward)
+- gamma=0.99 (default) will be near-optimal
+- gamma=0.999 may be unstable due to high variance TD targets
 
 ---
 
-### EXP_005: Update Frequency
+### EXP_014: Gamma + Tau Interaction
 
-**Hypothesis:** Updating every 2-4 steps instead of every step will improve wall-clock speed with minimal impact on sample efficiency.
+**Hypothesis:** Gamma and tau interact - higher gamma may require lower tau for stability.
 
 **Reasoning:**
-- update_every=1 means gradient computation after every env step (expensive)
-- Collecting multiple transitions before updating reduces overhead
-- Too infrequent (16+) wastes collected data without learning
-- Sweet spot likely 2-4 based on literature
+- High gamma = longer credit assignment chains = more potential for error accumulation
+- High tau = faster target updates = more potential instability
+- The combination of high gamma AND high tau may be catastrophic
+- Conversely, low gamma may tolerate higher tau
+
+**Values to test (2x2 factorial):**
 
 ```json
 {
-  "name": "update_frequency",
+  "name": "gamma_tau_interaction",
   "type": "grid",
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "update_every_n_steps": [1, 2, 4, 8]
+    "gamma": [0.95, 0.99],
+    "tau": [0.005, 0.02]
   }
 }
 ```
 
-**Measure:** Wall-clock time per episode, success rate, time to first success
-
 ---
 
-### EXP_006: Network Size vs Speed
+### EXP_015: PER Alpha/Beta Sweep
 
-**Hypothesis:** LunarLander's simple state space (8 dims) can be solved with much smaller networks than the current [256, 128].
+**Hypothesis:** The PER hyperparameters (alpha, beta) affect learning stability; current defaults may not be optimal.
 
 **Reasoning:**
-- Current network has ~35K parameters (actor) - likely overkill
-- LunarLander is a solved benchmark; minimal networks should suffice
-- [32, 32] = ~1.3K params - tests lower bound of viability
-- Smaller networks = faster forward/backward passes
+- alpha controls prioritization strength (0=uniform, 1=full priority)
+- beta controls importance sampling correction (0=none, 1=full)
+- Current: alpha=0.6, beta_start=0.4, beta_end=1.0
+- Higher alpha = more focus on high-TD experiences, but more bias
+- Higher beta = more correction for sampling bias, but higher variance
+
+**Values to test:**
 
 ```json
 {
-  "name": "network_size_performance",
+  "name": "per_alpha_sweep",
   "type": "grid",
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "hidden_sizes": [[32, 32], [64, 64], [128, 128], [256, 128]]
+    "per_alpha": [0.4, 0.6, 0.8]
   }
 }
 ```
 
-**Measure:** Forward pass time (ms), training step time (ms), final success rate
-
 ---
 
-### EXP_007: Replay Buffer Size
+### EXP_016: Gradient Clipping Sweep
 
-**Hypothesis:** Smaller replay buffers with more recent experiences may accelerate early learning by reducing distribution shift.
+**Hypothesis:** The gradient clip value (currently 10.0) may be too loose or too tight.
 
 **Reasoning:**
-- Current buffer (16384) holds ~160 episodes worth of data
-- Smaller buffer = experiences more relevant to current policy
-- Larger buffer = more diversity but older, possibly outdated experiences
-- Tradeoff: stability vs adaptation speed
+- Gradient clipping prevents exploding gradients
+- Too tight: Limits learning speed, may cause slow convergence
+- Too loose: May not prevent instability
+- Current value (10.0) is conservative; many implementations use 1.0 or 0.5
+
+**Values to test:** [0.5, 1.0, 5.0, 10.0, None]
 
 ```json
 {
-  "name": "buffer_size",
+  "name": "gradient_clip_sweep",
   "type": "grid",
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "buffer_size": [8192, 16384, 32768, 65536]
+    "gradient_clip_value": [0.5, 1.0, 5.0, 10.0]
   }
 }
 ```
 
-**Measure:** Memory usage, success rate, learning curve smoothness
-
 ---
 
-### EXP_008: Episode Length Cap
+### EXP_017: Noise Schedule Sweep
 
-**Hypothesis:** Capping episodes at 400-600 steps will save compute without hurting learning, since successful landings typically complete in 200-400 steps.
+**Hypothesis:** The noise decay schedule affects exploration quality; different schedules may improve sample efficiency.
 
 **Reasoning:**
-- Default max is 1000 steps (gymnasium default)
-- Skilled landings complete in 200-400 steps
-- Failed episodes (floating, crashing slowly) waste compute going to 1000
-- Cap too aggressive (<400) may terminate potentially successful attempts
-- 400 is minimum viable; 600 provides safety margin
+- Current: Linear decay from 1.0 to 0.2 over 300 episodes
+- Fast decay: Quick exploitation, risk of local minima
+- Slow decay: More exploration, slower convergence
+- For 500-episode runs, 300 episodes means noise is minimal for final 200
+
+**Values to test:**
 
 ```json
 {
-  "name": "episode_length_cap",
+  "name": "noise_decay_sweep",
   "type": "grid",
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "max_episode_steps": [400, 600, 800, 1000]
+    "noise_decay_episodes": [100, 200, 300, 400]
   }
 }
 ```
 
-**Measure:** Average steps per episode, episodes/second, success rate
-
 ---
 
-## Learning Quality Experiments
+### EXP_018: Noise Sigma Sweep
 
-### EXP_009: Learning Rate Sweep
-
-**Hypothesis:** The optimal actor/critic learning rate ratio matters more than absolute values; critic should be 1-2x actor.
+**Hypothesis:** The initial noise magnitude (sigma=0.3) affects exploration quality.
 
 **Reasoning:**
-- Current: actor=0.001, critic=0.002 (2x ratio)
-- DDPG paper: actor=1e-4, critic=1e-3 (10x ratio)
-- TD3 paper: both at 3e-4 (1x ratio)
-- Critic learns Q-values (regression) - typically tolerates higher LR
-- Actor learns policy (gradients through critic) - more sensitive
-- Test values centered around current defaults
+- sigma controls the magnitude of Ornstein-Uhlenbeck noise
+- Too low: Insufficient exploration, may miss good policies
+- Too high: Actions too random, slow to converge
+- LunarLander actions are bounded [-1, 1]; sigma=0.3 is moderate
+
+**Values to test:** [0.1, 0.2, 0.3, 0.5]
 
 ```json
 {
-  "name": "learning_rate_sweep",
-  "type": "grid",
-  "episodes_per_run": 500,
-  "num_runs_per_config": 1,
-  "parameters": {
-    "actor_lr": [1e-4, 5e-4, 1e-3],
-    "critic_lr": [5e-4, 1e-3, 2e-3]
-  }
-}
-```
-
-**Note:** 9 configs total; using 1 run per config to keep runtime manageable.
-
-**Measure:** Convergence speed, final success rate, reward variance
-
----
-
-### EXP_010: Noise Decay Schedule
-
-**Hypothesis:** Extending exploration (slower noise decay) will improve final performance at cost of slower early convergence.
-
-**Reasoning:**
-- Current: noise decays over 300 episodes
-- Fast decay (100 eps): Quick exploitation, risk of local minima
-- Slow decay (500 eps): More exploration, slower convergence
-- For 500-episode experiments, 300 means noise is minimal for final 200 episodes
-- Testing if more sustained exploration helps
-
-```json
-{
-  "name": "noise_decay_schedule",
+  "name": "noise_sigma_sweep",
   "type": "grid",
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "noise_decay_episodes": [100, 200, 300, 500]
+    "sigma": [0.1, 0.2, 0.3, 0.5]
   }
 }
 ```
 
-**Measure:** First success episode, exploration duration, final success rate
-
 ---
 
-### EXP_011: Soft Update Rate (Tau)
+### EXP_019: TD3 Policy Noise Sweep
 
-**Hypothesis:** Higher tau values will accelerate learning but risk instability; optimal is likely between 0.005-0.01.
+**Hypothesis:** The target policy noise parameters affect learning stability and final performance.
 
 **Reasoning:**
-- tau controls target network update: target = tau*online + (1-tau)*target
-- DDPG paper: tau=0.001 (very conservative)
-- Current default: tau=0.005 (moderate)
-- Higher tau = faster target tracking = faster learning but potential oscillation
-- 0.02+ likely causes instability in this environment
+- TD3 adds noise to target actions for smoothing (reduces overestimation)
+- target_policy_noise: Current 0.1, controls noise magnitude
+- target_noise_clip: Current 0.3, clips noise to prevent extreme values
+- Higher noise = more regularization but potentially slower learning
+
+**Values to test:**
 
 ```json
 {
-  "name": "tau_sweep",
+  "name": "td3_noise_sweep",
   "type": "grid",
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "tau": [0.001, 0.005, 0.01, 0.02]
+    "target_policy_noise": [0.05, 0.1, 0.2],
+    "target_noise_clip": [0.2, 0.3, 0.5]
   }
 }
 ```
 
-**Measure:** Learning stability (reward variance), convergence speed, final success rate
-
 ---
 
-### EXP_012: Reward Shaping Ablation
+### EXP_020: Policy Update Frequency Sweep
 
-**Hypothesis:** Some reward shaping components may be harmful to learning by creating local optima or conflicting gradients; a minimal shaping approach may outperform the full shaping function.
+**Hypothesis:** The delayed policy update frequency (currently 3) may not be optimal.
 
 **Reasoning:**
-- Current shaping has 4 per-step bonuses: time penalty, altitude bonus, leg contact bonus, stability bonus
-- Each bonus adds learning signal but also risk of reward hacking or local optima
-- Time penalty: Could rush agent into crashes, or helpfully discourage hovering
-- Altitude bonus: Could cause diving behavior, or help guide descent
-- Leg contact bonus: Could encourage premature landing attempts, or provide crucial signal
-- Stability bonus: Could distract from position/velocity control, or improve final landings
-- Testing all 2^4 = 16 combinations reveals which components actually help
+- TD3 delays policy updates to let critic stabilize
+- policy_update_frequency=1: Update every critic update (DDPG-style)
+- policy_update_frequency=2-3: TD3 default range
+- Higher delay = more stable but slower policy improvement
 
-**Current reward shaping components:**
-```
-1. time_penalty:    -0.05 per step (discourages hovering)
-2. altitude_bonus:  +0.5 when y_pos < 0.25 AND descending (guides to ground)
-3. leg_contact:     +2/+5 for one/both legs AND descending (rewards contact)
-4. stability:       +0.3/+0.1 for |angle| < 0.1/0.2 AND descending (rewards upright)
-
-(Terminal landing bonus +100 always enabled - this is the goal signal)
-```
-
-**Config parameters (booleans):**
-- `reward_time_penalty`: Enable -0.05/step penalty
-- `reward_altitude_bonus`: Enable +0.5 close-to-ground bonus
-- `reward_leg_contact`: Enable +2/+5 leg contact bonuses
-- `reward_stability`: Enable +0.3/+0.1 upright bonuses
+**Values to test:** [1, 2, 3, 5]
 
 ```json
 {
-  "name": "reward_shaping_ablation",
+  "name": "policy_update_freq_sweep",
   "type": "grid",
   "episodes_per_run": 500,
   "num_runs_per_config": 2,
   "parameters": {
-    "reward_time_penalty": [false, true],
-    "reward_altitude_bonus": [false, true],
-    "reward_leg_contact": [false, true],
-    "reward_stability": [false, true]
+    "policy_update_frequency": [1, 2, 3, 5]
   }
 }
 ```
 
-**Note:** 2^4 = 16 configs × 2 runs = 32 total runs. This is a large experiment but essential for understanding which shaping signals help.
+---
 
-**Key configurations to watch:**
-- `[false, false, false, false]`: No shaping (baseline - pure env reward)
-- `[true, true, true, true]`: Full shaping (current default)
-- `[true, false, false, false]`: Only time penalty
-- `[false, false, true, false]`: Only leg contact (most direct landing signal)
+### EXP_021: Long Training Run
 
-**Measure:** Success rate, first success episode, final-100 success rate, learning stability
+**Hypothesis:** Current 500-episode runs may not reach full potential; longer training could show continued improvement or plateau.
+
+**Reasoning:**
+- Best configs achieve ~50-70% final-100 success
+- Unknown if this is the ceiling or just insufficient training
+- Longer runs (1000-2000 episodes) reveal true learning dynamics
+
+**Config:**
+
+```json
+{
+  "name": "long_training",
+  "type": "grid",
+  "episodes_per_run": 2000,
+  "num_runs_per_config": 3,
+  "parameters": {
+    "placeholder": [true]
+  }
+}
+```
+
+---
+
+### EXP_022: Min Experiences Before Training
+
+**Hypothesis:** The warmup period (min_experiences_before_training=2000) affects early learning quality.
+
+**Reasoning:**
+- Current: Wait for 2000 experiences before first training update
+- Too few: Training on bad initial data may harm learning
+- Too many: Delays start of learning, wastes early episodes
+
+**Values to test:** [500, 1000, 2000, 4000]
+
+```json
+{
+  "name": "warmup_sweep",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 2,
+  "parameters": {
+    "min_experiences_before_training": [500, 1000, 2000, 4000]
+  }
+}
+```
 
 ---
 
 ## Priority Queue
 
-Experiments ordered by expected impact on performance:
+Based on expected impact and ease of implementation:
 
-1. **EXP_005: Update Frequency** - Highest potential speedup with minimal risk
-2. **EXP_006: Network Size** - Could enable 2-4x faster forward passes
-3. **EXP_008: Episode Length Cap** - Easy win for reducing wasted compute
-4. **EXP_004: Batch Size** - May find faster config than current default
-5. **EXP_007: Buffer Size** - May enable faster adaptation
+### High Priority (likely impactful, well-defined)
+1. **EXP_013: Gamma Sweep** - Untested core hyperparameter
+2. **EXP_017: Noise Schedule** - May improve exploration efficiency
+3. **EXP_021: Long Training** - Understand true performance ceiling
 
-Learning quality experiments (run after performance baseline established):
+### Medium Priority (useful but secondary)
+4. **EXP_014: Gamma+Tau Interaction** - Test interaction effects
+5. **EXP_015: PER Alpha/Beta** - Tune prioritized replay
+6. **EXP_020: Policy Update Frequency** - TD3-specific tuning
 
-6. **EXP_009: Learning Rate Sweep** - Foundational tuning
-7. **EXP_011: Tau Sweep** - Quick experiment, high potential impact
-8. **EXP_010: Noise Decay** - Important for exploration/exploitation balance
+### Lower Priority (incremental improvements)
+7. **EXP_016: Gradient Clipping** - Minor tuning
+8. **EXP_018: Noise Sigma** - Minor tuning
+9. **EXP_019: TD3 Noise** - Minor tuning
+10. **EXP_022: Warmup** - Minor tuning

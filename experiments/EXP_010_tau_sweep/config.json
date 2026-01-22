@@ -1,0 +1,9 @@
+{
+  "name": "tau_sweep",
+  "type": "grid",
+  "episodes_per_run": 500,
+  "num_runs_per_config": 2,
+  "parameters": {
+    "tau": [0.001, 0.005, 0.01, 0.05]
+  }
+}

@@ -23,16 +23,19 @@ Quick reference for all experiments. Update this file when creating or concludin
 | EXP_005 | Update Frequency | CONCLUDED | updates=10 optimal (22.7% success, 70% final-100); updates=50 highly unstable (0% to 26%) | 2026-01-20 |
 | EXP_006 | Network Size Performance | CONCLUDED | [64,32] matches/exceeds [256,128] while 2x faster; high variance dominates all configs | 2026-01-20 |
 | EXP_007 | Buffer Size | CONCLUDED | buffer_size=16384 optimal; larger buffers (65536) catastrophically fail due to stale experiences | 2026-01-20 |
-| EXP_008 | Episode Length Cap | RUNNING | Testing max_episode_steps [400, 600, 800, 1000] | 2026-01-21 |
+| EXP_008 | Episode Length Cap | CONCLUDED | Default 1000 steps is optimal; shorter caps hurt learning without saving compute | 2026-01-22 |
 | EXP_009 | Learning Rate Sweep | CONCLUDED | Equal LRs optimal (actor=critic=0.001 → 68%); actor>critic catastrophic (7.5%) | 2026-01-21 |
+| EXP_010 | Tau Sweep | PLANNED | Testing tau [0.001, 0.005, 0.01, 0.05] | 2026-01-22 |
 | EXP_012 | Reward Shaping Ablation | CONCLUDED | time_penalty hurts learning; F/T/T/T (no time penalty) achieves 51% vs 16.5% for full shaping | 2026-01-21 |
+| EXP_013 | Gamma Sweep | PLANNED | Testing gamma [0.9, 0.99, 0.995, 0.999] | 2026-01-22 |
 
 ## Quick Stats
 
-- **Total experiments:** 10
-- **Concluded:** 7
-- **Completed:** 2
-- **Planned:** 1
+- **Total experiments:** 12
+- **Concluded:** 8
+- **Completed:** 1
+- **Planned:** 2
+- **Running:** 0
 
 ## Best Known Parameters
 
@@ -49,6 +52,7 @@ Parameters that have been experimentally validated. Update when experiments conc
 | `actor_lr` | 0.001 | Best performance | EXP_009 | 68% final-100 with equal critic_lr; 1:1 ratio optimal |
 | `critic_lr` | 0.001 | Best performance | EXP_009 | 68% final-100 with equal actor_lr; TD3-style 1:1 ratio |
 | `time_penalty` | False | Best performance | EXP_012 | 51% final-100 (F/T/T/T) vs 16.5% with time penalty enabled |
+| `max_episode_steps` | 1000 | Best performance | EXP_008 | 42% final-100 avg; shorter caps hurt learning and don't save compute |
 
 ### Parameters to Avoid
 
@@ -61,13 +65,15 @@ Parameters that have been experimentally validated. Update when experiments conc
 | `actor_lr > critic_lr` | any | Catastrophic (7.5-15% final-100); policy outruns critic's ability to evaluate | EXP_009 |
 | `time_penalty` | True | Full shaping (T/T/T/T) worse than no shaping (16.5% vs 24%); creates conflicting gradients | EXP_012 |
 | `altitude_bonus` alone | F/T/F/F | Worst config (5.5% final-100); encourages diving without landing skills | EXP_012 |
+| `max_episode_steps` | 400-800 | Shorter caps hurt learning (13-21.5% final-100) vs 42% at 1000; no compute savings | EXP_008 |
 
 ### Untested Parameters
 
 <!-- Parameters that would benefit from experimentation -->
 
-- `tau` - soft update coefficient
-- `gamma` - discount factor
+- `noise_decay_episodes` - exploration schedule
+- `per_alpha` - PER prioritization strength
+- `policy_update_frequency` - TD3 delayed policy updates
 
 ## Recent Insights
 
@@ -82,6 +88,7 @@ Parameters that have been experimentally validated. Update when experiments conc
 7. **Updates per episode has a non-monotonic optimum**: EXP_005 found training_updates_per_episode=10 beats both smaller (5) and larger (25, 50) values; 50 is pathologically unstable
 8. **Buffer eviction is a feature, not a bug**: EXP_007 showed that "infinite memory" buffers (65536) catastrophically fail because PER prioritizes stale, irrelevant experiences from early bad policies; the default 16384 is optimal
 9. **Equal learning rates are optimal**: EXP_009 showed TD3-style 1:1 ratio (actor_lr=critic_lr=0.001) achieves 68% final-100, beating both DDPG-style high ratios and the previous 2:1 default; actor > critic causes catastrophic failure
+10. **Episode caps don't save compute**: EXP_008 showed shorter max_episode_steps (400-800) hurt learning without saving time because successful episodes terminate early anyway; keep at 1000
 
 ## Next Experiments Queue
 
