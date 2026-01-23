@@ -24,6 +24,7 @@ from training.environment import (
     compute_noise_scale,
 )
 from training.noise import OUActionNoise
+from training.video import EpisodeRecorder
 from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from training.trainer import TD3Trainer
 from training.training_options import TrainingOptions
@@ -36,6 +37,7 @@ from output_mode import OutputController
 
 if TYPE_CHECKING:
     from models import EpisodeData, TimingState, TrainingContext, PyGameContext
+    from data.simulation_io import SimulationDirectory
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,55 @@ logger = logging.getLogger(__name__)
 MEMORY_LOG_INTERVAL = 50  # Log memory usage every N episodes
 MEMORY_CHECK_INTERVAL = 10  # Check memory threshold every N episodes (not every episode)
 MEMORY_LIMIT_MB = 3000  # Trigger emergency GC if memory exceeds this threshold
+
+# Checkpoint constants
+CHECKPOINT_INTERVAL = 1000  # Save model checkpoint every N episodes
+
+
+def _save_model_checkpoint(
+    trainer: TD3Trainer,
+    episode_num: int,
+    options: TrainingOptions,
+    sim_dir: Optional["SimulationDirectory"] = None,
+    is_final: bool = False
+) -> Optional[str]:
+    """Save a model checkpoint.
+
+    Args:
+        trainer: The TD3Trainer instance with model weights
+        episode_num: Current episode number (used in checkpoint filename)
+        options: Training options with save paths
+        sim_dir: Simulation directory (for non-experiment runs)
+        is_final: If True, save as 'final_model' instead of checkpoint
+
+    Returns:
+        Path to saved model, or None if save failed
+    """
+    try:
+        # Determine save path
+        if options.is_experiment and options.results_dir is not None:
+            models_dir = options.results_dir / "models"
+            models_dir.mkdir(parents=True, exist_ok=True)
+            if is_final:
+                model_path = str(models_dir / f"{options.run_name or 'final'}_model")
+            else:
+                model_path = str(models_dir / f"checkpoint_ep{episode_num}")
+        elif sim_dir is not None:
+            sim_dir.models_path.mkdir(parents=True, exist_ok=True)
+            if is_final:
+                model_path = str(sim_dir.models_path / "final_model")
+            else:
+                model_path = str(sim_dir.models_path / f"checkpoint_ep{episode_num}")
+        else:
+            return None
+
+        trainer.save(model_path)
+        checkpoint_type = "Final model" if is_final else f"Checkpoint (ep {episode_num})"
+        logger.info(f"{checkpoint_type} saved to {model_path}")
+        return model_path
+    except Exception as e:
+        logger.error(f"Failed to save model checkpoint: {e}")
+        return None
 
 
 def get_memory_mb() -> float:
@@ -206,7 +257,9 @@ def _run_episode(
     timing_state: "TimingState",
     output: OutputController,
     should_render: bool = False,
-    pygame_ctx: Optional["PyGameContext"] = None
+    pygame_ctx: Optional["PyGameContext"] = None,
+    record_episode: bool = False,
+    frames_dir: Optional[Path] = None
 ) -> tuple[Optional["EpisodeResult"], int]:
     """Run a single episode with identical logic for rendered and unrendered modes.
 
@@ -227,6 +280,8 @@ def _run_episode(
         output: OutputController for mode-aware printing
         should_render: Whether to render frames via pygame
         pygame_ctx: Pygame context (required if should_render=True)
+        record_episode: Whether to save frames to disk for video compilation
+        frames_dir: Directory to save frames (required if record_episode=True)
 
     Returns:
         Tuple of (EpisodeResult or None if user quit, steps taken this episode)
@@ -239,6 +294,15 @@ def _run_episode(
     frame_buffer = None
     text_surface = None
     text_pos = None
+
+    # Initialize frame recorder if recording this episode
+    recorder = None
+    if record_episode and frames_dir is not None:
+        recorder = EpisodeRecorder(
+            frames_dir=frames_dir,
+            episode_num=episode_num,
+            frame_format=config.video.frame_format
+        )
 
     if should_render:
         import pygame as pg
@@ -310,6 +374,10 @@ def _run_episode(
             if config.run.framerate is not None:
                 pygame_ctx.clock.tick(config.run.framerate)
 
+            # Save frame to disk if recording
+            if recorder is not None:
+                recorder.save_frame(frame)
+
         # Apply reward shaping (IDENTICAL for both modes)
         current_step = len(rewards)
         shaped_reward = shape_reward(obs, reward, terminated, config.reward_shaping, step=current_step)
@@ -335,6 +403,10 @@ def _run_episode(
             episode_terminated = terminated
             episode_truncated = truncated
             running = False
+
+    # Finalize frame recorder if active
+    if recorder is not None:
+        recorder.finalize()
 
     # Compute results (IDENTICAL for both modes)
     episode_steps = len(rewards)
@@ -400,6 +472,13 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
 
     # Initialize trainer and replay buffer
     trainer = TD3Trainer(config.training, config.environment, config.run)
+
+    # Load pre-trained model if specified
+    if options.load_model_path is not None:
+        model_path = str(options.load_model_path)
+        logger.info(f"Loading pre-trained model from: {model_path}")
+        trainer.load(model_path)
+        logger.info("Model loaded successfully")
 
     if config.training.use_per:
         replay_buffer = PrioritizedReplayBuffer(
@@ -493,9 +572,9 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
             run_charts_folder.mkdir(parents=True, exist_ok=True)
             charts_folder = str(run_charts_folder)
 
-    # Override with explicit directories from options (but not for experiments -
-    # experiments generate charts separately at the end via sweep_runner)
-    if options.charts_dir is not None and not options.is_experiment:
+    # Override with explicit directories from options
+    # (charts_dir can be used for experiments too if explicitly provided)
+    if options.charts_dir is not None:
         charts_folder = str(options.charts_dir)
         Path(charts_folder).mkdir(parents=True, exist_ok=True)
     if options.results_dir is not None:
@@ -550,6 +629,13 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                 # Determine if this episode should be rendered
                 should_render = completed_episodes in env_bundle.render_episodes and pygame_ctx is not None
 
+                # Determine if this episode should be recorded for video
+                record_episode = (
+                    completed_episodes in config.video.record_episodes
+                    and options.frames_dir is not None
+                    and should_render  # Must be rendering to record frames
+                )
+
                 # Run episode (same logic for both rendered and unrendered)
                 result, episode_steps = _run_episode(
                     env_bundle.env,
@@ -561,7 +647,9 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                     timing_state,
                     output,
                     should_render=should_render,
-                    pygame_ctx=pygame_ctx
+                    pygame_ctx=pygame_ctx,
+                    record_episode=record_episode,
+                    frames_dir=options.frames_dir
                 )
 
                 if result is None:
@@ -614,24 +702,20 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                     if aggregate_writer:
                         aggregate_writer.maybe_write(completed_episodes, diagnostics)
 
+                # Periodic model checkpoint saving
+                if options.save_model and completed_episodes % CHECKPOINT_INTERVAL == 0:
+                    _save_model_checkpoint(
+                        trainer, completed_episodes, options, sim_dir, is_final=False
+                    )
+
     except KeyboardInterrupt:
         error_occurred = "KeyboardInterrupt"
         logger.warning("\n\nTraining interrupted by user (Ctrl+C)")
 
     except Exception as e:
-        if pg is not None:
-            import pygame.error
-            if isinstance(e, pygame.error):
-                error_occurred = f"pygame.error: {e}"
-                logger.error(f"\n\nPygame error occurred: {e}")
-            else:
-                error_occurred = f"{type(e).__name__}: {e}"
-                logger.error(f"\n\nUnexpected error occurred: {e}")
-                traceback.print_exc()
-        else:
-            error_occurred = f"{type(e).__name__}: {e}"
-            logger.error(f"\n\nUnexpected error occurred: {e}")
-            traceback.print_exc()
+        error_occurred = f"{type(e).__name__}: {e}"
+        logger.error(f"\n\nUnexpected error occurred: {e}")
+        traceback.print_exc()
 
     finally:
         elapsed_time = time.time() - start_time if start_time is not None else 0.0
@@ -660,22 +744,11 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                 except Exception as e:
                     logger.error(f"Failed to write final aggregate: {e}")
 
-            # Save model
+            # Save final model (always attempt on exit, even if interrupted)
             if options.save_model:
-                try:
-                    # For experiments, save to results_dir; otherwise use sim_dir
-                    if options.is_experiment and options.results_dir is not None:
-                        model_path = str(options.results_dir / f"{options.run_name or 'final'}_model")
-                    elif sim_dir is not None:
-                        model_path = str(sim_dir.models_path / "final_model")
-                    else:
-                        model_path = None
-
-                    if model_path:
-                        trainer.save(model_path)
-                        logger.info(f"Model saved to {model_path}")
-                except Exception as e:
-                    logger.error(f"Failed to save model: {e}")
+                _save_model_checkpoint(
+                    trainer, completed_episodes, options, sim_dir, is_final=True
+                )
 
             # Generate final charts
             if charts_folder is not None:
@@ -694,6 +767,18 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                     chart_generator.generate_all(show=True, block=True)
                 except Exception as e:
                     logger.error(f"Failed to show final charts: {e}")
+
+            # Export chart data to run_data.jsonl for experiments
+            if options.is_experiment and options.results_dir is not None:
+                try:
+                    import json
+                    run_data_path = options.results_dir / "run_data.jsonl"
+                    chart_data = diagnostics.to_chart_data()
+                    with open(run_data_path, 'w', encoding='utf-8') as f:
+                        f.write(json.dumps(chart_data) + '\n')
+                    logger.info(f"Chart data exported to {run_data_path}")
+                except Exception as e:
+                    logger.error(f"Failed to export chart data: {e}")
         else:
             if not output.is_silent():
                 print("\nNo episodes completed - no diagnostics to show")

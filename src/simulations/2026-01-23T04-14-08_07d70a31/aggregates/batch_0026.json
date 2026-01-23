@@ -1,0 +1,238 @@
+{
+  "_metadata": {
+    "schema_version": "1.0.0",
+    "completed_episodes": 2600,
+    "created_at": "2026-01-23T06:30:02.353754"
+  },
+  "summary": {
+    "total_episodes": 2600,
+    "num_successes": 837,
+    "success_rate": 0.3219230769230769,
+    "mean_reward": -156.43338494387785,
+    "max_reward": 799.6642196348133,
+    "min_reward": -2514.449586728191,
+    "final_50_mean_reward": 388.81408767948346
+  },
+  "training": {
+    "mean_q_value": -55.49584015038374,
+    "q_value_trend": [
+      -21.725985222675494,
+      30.92584630339735
+    ],
+    "mean_actor_loss": 54.19425047860191,
+    "mean_critic_loss": 1.4387198640738366,
+    "mean_actor_grad_norm": 0.6694532430549387,
+    "mean_critic_grad_norm": 19.88961371761392
+  },
+  "streaks": {
+    "max_streak": 35,
+    "max_streak_episode": 1772,
+    "current_streak": 3
+  },
+  "behaviors": {
+    "outcome_counts": {
+      "TOUCHED_DOWN_ONE_LEG": 560,
+      "LANDED_HARD": 4,
+      "CRASHED_TILTED": 7,
+      "CRASHED_SPINNING": 732,
+      "CRASHED_SIDEWAYS": 8,
+      "FLEW_OFF_LEFT_TILTED": 2,
+      "FLEW_OFF_RIGHT_TILTED": 58,
+      "LANDED_TILTED": 72,
+      "FLEW_OFF_TOP": 5,
+      "TIMED_OUT_HOVERING": 40,
+      "SUSTAINED_BOUNCING": 250,
+      "CRASHED_OTHER": 72,
+      "CRASHED_HIGH_VELOCITY": 4,
+      "TIMED_OUT_DESCENDING": 7,
+      "LANDED_PERFECTLY": 578,
+      "LANDED_SOFTLY": 201
+    },
+    "outcome_category_counts": {
+      "landed": 779,
+      "crashed": 1459,
+      "timed_out": 47,
+      "flew_off": 65,
+      "bouncing": 250
+    },
+    "top_behaviors": [
+      {
+        "behavior": "DIRECT_APPROACH",
+        "count": 2327,
+        "percentage": 89.5
+      },
+      {
+        "behavior": "REACHED_LOW_ALTITUDE",
+        "count": 2283,
+        "percentage": 87.8076923076923
+      },
+      {
+        "behavior": "EXCEEDED_SPIN_RATE",
+        "count": 1560,
+        "percentage": 60.0
+      },
+      {
+        "behavior": "MAIN_THRUST_NONE",
+        "count": 1485,
+        "percentage": 57.11538461538461
+      },
+      {
+        "behavior": "PROGRESSIVE_TILT",
+        "count": 1214,
+        "percentage": 46.69230769230769
+      },
+      {
+        "behavior": "CONTROLLED_DESCENT",
+        "count": 1199,
+        "percentage": 46.11538461538461
+      },
+      {
+        "behavior": "STALLED_THEN_FELL",
+        "count": 1175,
+        "percentage": 45.19230769230769
+      },
+      {
+        "behavior": "SPIRAL_DESCENT",
+        "count": 1156,
+        "percentage": 44.46153846153847
+      },
+      {
+        "behavior": "STAYED_CENTERED",
+        "count": 1144,
+        "percentage": 44.0
+      },
+      {
+        "behavior": "FLIPPED_OVER",
+        "count": 1135,
+        "percentage": 43.65384615384615
+      },
+      {
+        "behavior": "YO_YO_PATTERN",
+        "count": 1109,
+        "percentage": 42.65384615384615
+      },
+      {
+        "behavior": "HORIZONTAL_OSCILLATION",
+        "count": 1048,
+        "percentage": 40.30769230769231
+      },
+      {
+        "behavior": "SHORT_EPISODE",
+        "count": 1047,
+        "percentage": 40.26923076923077
+      },
+      {
+        "behavior": "RAPID_DESCENT",
+        "count": 1010,
+        "percentage": 38.84615384615385
+      },
+      {
+        "behavior": "ERRATIC_THRUST",
+        "count": 1000,
+        "percentage": 38.46153846153847
+      }
+    ],
+    "quality_rates": {
+      "good_behavior_rate": 99.57692307692308,
+      "bad_behavior_rate": 84.84615384615385,
+      "low_altitude_rate": 87.8076923076923,
+      "contact_rate": 67.07692307692308,
+      "clean_touchdown_rate": 37.69230769230769
+    },
+    "flight_quality": {
+      "stayed_upright_rate": 25.884615384615383,
+      "stayed_centered_rate": 44.0,
+      "controlled_descent_rate": 46.11538461538461,
+      "controlled_throughout_rate": 5.923076923076923,
+      "never_stabilized_rate": 28.999999999999996
+    },
+    "success_correlation": {
+      "success_behavior_rates": {
+        "STAYED_UPRIGHT": 52.09080047789725,
+        "STAYED_CENTERED": 61.40979689366786,
+        "CONTROLLED_DESCENT": 93.0704898446834,
+        "REACHED_LOW_ALTITUDE": 100.0,
+        "TOUCHED_DOWN_CLEAN": 74.55197132616487,
+        "CONTROLLED_THROUGHOUT": 7.168458781362006,
+        "NEVER_STABILIZED": 0.0,
+        "RAPID_DESCENT": 0.0,
+        "STABLE_ALTITUDE": 2.1505376344086025,
+        "ERRATIC_THRUST": 46.83393070489845,
+        "SMOOTH_THRUST": 0.0,
+        "NO_CONTACT_MADE": 0.0
+      },
+      "failure_behavior_rates": {
+        "STAYED_UPRIGHT": 13.44299489506523,
+        "STAYED_CENTERED": 35.73454339194554,
+        "CONTROLLED_DESCENT": 23.823028927963698,
+        "REACHED_LOW_ALTITUDE": 82.01928530913216,
+        "TOUCHED_DOWN_CLEAN": 20.19285309132161,
+        "CONTROLLED_THROUGHOUT": 5.331820760068066,
+        "NEVER_STABILIZED": 42.768009075439586,
+        "RAPID_DESCENT": 57.28871242200794,
+        "STABLE_ALTITUDE": 20.13613159387408,
+        "ERRATIC_THRUST": 34.48667044809983,
+        "SMOOTH_THRUST": 49.461145774248436,
+        "NO_CONTACT_MADE": 42.42768009075439
+      }
+    },
+    "crash_type_distribution": {
+      "LANDED_HARD": 0.2741603838245374,
+      "LANDED_TILTED": 4.934886908841672,
+      "TOUCHED_DOWN_ONE_LEG": 38.38245373543523,
+      "CRASHED_HIGH_VELOCITY": 0.2741603838245374,
+      "CRASHED_TILTED": 0.47978067169294036,
+      "CRASHED_SIDEWAYS": 0.5483207676490748,
+      "CRASHED_SPINNING": 50.17135023989033,
+      "CRASHED_OTHER": 4.934886908841672
+    }
+  },
+  "advanced": {
+    "env_reward": {
+      "mean": -244.33280802080134,
+      "std": 504.6216814221939,
+      "max": 315.7735033615602,
+      "min": -2515.449586728191
+    },
+    "recent_100": {
+      "env_reward_mean": 235.5425924662717,
+      "success_count": 83,
+      "success_rate": 83.0
+    },
+    "rolling_success_rate_50": 86.0,
+    "rolling_success_rate_100": 83.0,
+    "near_misses": {
+      "count": 32,
+      "episodes": []
+    },
+    "first_success_episode": 1295,
+    "max_streak_last_200": 12,
+    "successful_landings": {
+      "count": 837,
+      "env_reward_mean": 256.9686728768256,
+      "env_reward_std": 23.728580427864355,
+      "env_reward_min": 200.52125221911024,
+      "env_reward_max": 315.7735033615602
+    },
+    "success_quality": {
+      "stayed_upright": 52.09080047789725,
+      "stayed_centered": 61.40979689366786,
+      "controlled_descent": 93.0704898446834,
+      "clean_touchdown": 74.55197132616487,
+      "landed_perfectly": 0.0,
+      "landed_softly": 0.0
+    }
+  },
+  "landing_quality": {
+    "count": 1415,
+    "mean": -82.16900172808303,
+    "std": 449.2426617523057,
+    "min": -2330.2348921964763,
+    "max": 315.7735033615602,
+    "above_200": 644,
+    "above_200_pct": 45.51236749116608,
+    "in_range_180_200": 15,
+    "in_range_150_180": 5,
+    "below_150": 751
+  }
+}

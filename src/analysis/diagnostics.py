@@ -806,6 +806,57 @@ class DiagnosticsTracker:
             'critic_grad_norms': self.critic_grad_norms
         }
 
+    def to_chart_data(self) -> Dict[str, Any]:
+        """Export all data needed to recreate charts.
+
+        Returns a dictionary containing all data from getter methods used by ChartGenerator.
+        This data can be serialized to JSON for later chart recreation without re-running training.
+        """
+        # Get report card data
+        first_100_freqs, last_100_freqs = self.get_report_card_data()
+
+        return {
+            # Metadata
+            'total_episodes': self.total_episodes,
+            'batch_size': self.batch_size,
+
+            # Per-episode data (for reward chart, duration chart)
+            'env_rewards': self.env_rewards,
+            'shaped_bonuses': self.shaped_bonuses,
+            'durations': self.durations,
+            'successes_bool': self.successes_bool,
+            'outcomes': self.outcomes,
+
+            # Streak data (for streak chart)
+            'streak_history': self.streak_history,
+            'max_streak': self.max_streak,
+            'max_streak_episode': self.max_streak_episode,
+            'first_success_episode': self.first_success_episode,
+
+            # Batch aggregates (for success rate, outcome, heatmap charts)
+            'batch_success_rates': self.batch_success_rates,
+            'batch_outcome_distributions': self.batch_outcome_distributions,
+            'batch_behavior_frequencies': self.batch_behavior_frequencies,
+
+            # Landing histogram data
+            'landed_env_rewards': self.landed_env_rewards,
+
+            # Report card data (first 100 vs last 100)
+            'first_100_behavior_freqs': first_100_freqs,
+            'last_100_behavior_freqs': last_100_freqs,
+
+            # Summary statistics
+            'success_count': self.success_count,
+            'success_rate': self.success_count / self.total_episodes * 100 if self.total_episodes > 0 else 0.0,
+
+            # Training metrics
+            'q_values': self.q_values,
+            'actor_losses': self.actor_losses,
+            'critic_losses': self.critic_losses,
+            'actor_grad_norms': self.actor_grad_norms,
+            'critic_grad_norms': self.critic_grad_norms,
+        }
+
 
 # Re-export DiagnosticsReporter for backwards compatibility
 from analysis.reporter import DiagnosticsReporter

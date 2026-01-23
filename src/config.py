@@ -131,6 +131,26 @@ class NoiseConfig:
     noise_scale_final: float = 0.2
     noise_decay_episodes: int = 300
 
+@dataclass(frozen=True)
+class VideoConfig:
+    """Configuration for video recording of episodes.
+
+    Frames are saved to disk during specified episodes, then compiled to MP4.
+    """
+
+    # Episodes to record (empty tuple = no recording)
+    # Can specify individual episodes or ranges, e.g., (1, 2, 3, 100, 101, 102)
+    record_episodes: Tuple[int, ...] = field(default_factory=tuple)
+
+    # Video output settings
+    video_framerate: int = 75  # FPS for compiled video
+    frame_format: str = "png"  # Frame image format (png for quality, jpg for speed)
+
+    # Output paths (relative to experiment folder, set at runtime)
+    frames_dir: str = "frames"
+    video_dir: str = "video"
+
+
 @dataclass
 class Config:
     """Master configuration combining all config sections."""
@@ -141,5 +161,6 @@ class Config:
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
     reward_shaping: RewardShapingConfig = field(default_factory=RewardShapingConfig)
+    video: VideoConfig = field(default_factory=VideoConfig)
 
 # 

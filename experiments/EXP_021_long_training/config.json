@@ -1,0 +1,9 @@
+{
+  "name": "long_training",
+  "type": "grid",
+  "episodes_per_run": 3000,
+  "num_runs_per_config": 3,
+  "parameters": {
+    "batch_size": [32]
+  }
+}

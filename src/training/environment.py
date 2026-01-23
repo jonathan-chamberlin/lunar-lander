@@ -140,7 +140,7 @@ def shape_reward(
     if terminated and leg1_contact and leg2_contact and base_reward > 0:
         shaped_reward += 100
 
-    return shaped_reward
+    return round(shaped_reward, 2)
 
 
 def compute_noise_scale(

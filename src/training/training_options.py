@@ -20,6 +20,8 @@ class TrainingOptions:
     # Directories for saving artifacts (None = use default simulation directory)
     results_dir: Optional[Path] = None
     charts_dir: Optional[Path] = None
+    frames_dir: Optional[Path] = None  # Directory for video frame capture
+    video_dir: Optional[Path] = None   # Directory for compiled videos
 
     # Run identification
     run_name: Optional[str] = None
@@ -34,3 +36,6 @@ class TrainingOptions:
 
     # Experiment mode (affects chart generation)
     is_experiment: bool = False  # True = only generate final chart, skip periodic
+
+    # Model loading for multi-phase training
+    load_model_path: Optional[Path] = None  # Path to pre-trained model to continue from
