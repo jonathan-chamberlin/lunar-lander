@@ -29,6 +29,7 @@ from training.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from training.trainer import TD3Trainer
 from training.training_options import TrainingOptions
 from training.training_result import TrainingResult
+from training.memory_limiter import MemoryLimiter, get_recommended_limit_mb
 from analysis.diagnostics import DiagnosticsTracker, DiagnosticsReporter
 from analysis.behavior_analysis import BehaviorAnalyzer
 from analysis.charts import ChartGenerator
@@ -44,7 +45,9 @@ logger = logging.getLogger(__name__)
 # Memory monitoring constants
 MEMORY_LOG_INTERVAL = 50  # Log memory usage every N episodes
 MEMORY_CHECK_INTERVAL = 10  # Check memory threshold every N episodes (not every episode)
-MEMORY_LIMIT_MB = 3000  # Trigger emergency GC if memory exceeds this threshold
+# Default memory limit - leaves headroom for other apps (browser, etc.)
+# Can be overridden via TrainingOptions.memory_limit_mb
+DEFAULT_MEMORY_LIMIT_MB = 4000
 
 # Checkpoint constants
 CHECKPOINT_INTERVAL = 1000  # Save model checkpoint every N episodes
@@ -112,7 +115,8 @@ def _run_periodic_diagnostics(
     text_folder: Optional[str],
     completed_episodes: int,
     output: OutputController,
-    open_charts: bool = False
+    open_charts: bool = False,
+    batch_size: int = 50
 ) -> None:
     """Run periodic diagnostics and chart generation.
 
@@ -124,6 +128,7 @@ def _run_periodic_diagnostics(
         completed_episodes: Number of episodes completed
         output: OutputController for mode-aware printing
         open_charts: Whether to auto-open generated charts (HUMAN mode only)
+        batch_size: Batch size for chart generation
     """
     # Print diagnostics summary based on mode
     if output.is_verbose():
@@ -144,7 +149,7 @@ def _run_periodic_diagnostics(
     # Generate chart to file (if charts_folder provided)
     if charts_folder is not None:
         chart_path = os.path.join(charts_folder, f"chart_episode_{completed_episodes}.png")
-        chart_gen = ChartGenerator(diagnostics, batch_size=50)
+        chart_gen = ChartGenerator(diagnostics, batch_size=batch_size)
         if chart_gen.generate_to_file(chart_path):
             if open_charts and output.is_verbose():
                 os.startfile(chart_path)
@@ -180,22 +185,23 @@ def _finalize_episode(
         success=success
     )
 
-    # Analyze behaviors
+    # Analyze behaviors (only if arrays are available)
     behavior_report = None
     outcome = 'UNKNOWN'
     outcome_category = 'crashed'
-    if len(data.observations_array) > 0 and len(data.actions_array) > 0:
-        behavior_report = behavior_analyzer.analyze(
-            data.observations_array, data.actions_array, data.terminated, data.truncated
-        )
-        outcome = behavior_report.outcome
-        outcome_category = OUTCOME_TO_CATEGORY.get(outcome, 'crashed')
-        context.diagnostics.record_behavior(
-            outcome=outcome,
-            behaviors=behavior_report.behaviors,
-            env_reward=data.env_reward,
-            success=success
-        )
+    if data.observations_array is not None and data.actions_array is not None:
+        if len(data.observations_array) > 0 and len(data.actions_array) > 0:
+            behavior_report = behavior_analyzer.analyze(
+                data.observations_array, data.actions_array, data.terminated, data.truncated
+            )
+            outcome = behavior_report.outcome
+            outcome_category = OUTCOME_TO_CATEGORY.get(outcome, 'crashed')
+            context.diagnostics.record_behavior(
+                outcome=outcome,
+                behaviors=behavior_report.behaviors,
+                env_reward=data.env_reward,
+                success=success
+            )
 
     # Print episode status via OutputController
     output.print_episode(
@@ -362,7 +368,7 @@ def _run_episode(
         next_obs, reward, terminated, truncated, info = env.step(action_np)
         next_state = T.from_numpy(next_obs).float()
 
-        # Render frame (only if rendering)
+        # Render frame for display (requires pygame)
         if should_render and pg is not None:
             frame = env.render()
             frame_buffer[:] = frame.transpose(1, 0, 2)
@@ -374,9 +380,14 @@ def _run_episode(
             if config.run.framerate is not None:
                 pygame_ctx.clock.tick(config.run.framerate)
 
-            # Save frame to disk if recording
+            # Save frame to disk if recording (with display)
             if recorder is not None:
                 recorder.save_frame(frame)
+
+        # Render frame for recording only (no display) - headless video capture
+        elif recorder is not None:
+            frame = env.render()
+            recorder.save_frame(frame)
 
         # Apply reward shaping (IDENTICAL for both modes)
         current_step = len(rewards)
@@ -420,6 +431,13 @@ def _run_episode(
 
     timing_state.total_steps += episode_steps
 
+    # Convert to arrays for behavior analysis (will be cleared after)
+    actions_arr = np.array(actions)
+    observations_arr = np.array(observations_list)
+
+    # Clear local lists immediately to free memory
+    del actions, observations_list, rewards
+
     episode_data = EpisodeData(
         episode_num=episode_num,
         total_reward=total_reward,
@@ -427,13 +445,20 @@ def _run_episode(
         shaped_bonus=shaped_bonus,
         steps=episode_steps,
         duration_seconds=duration_seconds,
-        actions_array=np.array(actions),
-        observations_array=np.array(observations_list),
         terminated=episode_terminated,
         truncated=episode_truncated,
+        actions_array=actions_arr,
+        observations_array=observations_arr,
         rendered=should_render
     )
+
+    # Clear array references after creating EpisodeData
+    del actions_arr, observations_arr
+
     result = _finalize_episode(episode_data, training_context, timing_state, output)
+
+    # Clear trajectory arrays in EpisodeData to free memory
+    episode_data.clear_arrays()
 
     return result, episode_steps
 
@@ -494,10 +519,15 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
         logger.info("Using uniform Experience Replay")
 
     noise = OUActionNoise(config.noise)
-    diagnostics = DiagnosticsTracker()
+    diagnostics = DiagnosticsTracker(batch_size=options.diagnostics_batch_size)
     reporter = DiagnosticsReporter(diagnostics)
 
     output = OutputController.from_string(options.output_mode)
+
+    # Initialize memory limiter to prevent system-wide memory exhaustion
+    memory_limit = options.memory_limit_mb or get_recommended_limit_mb()
+    memory_limiter = MemoryLimiter(limit_mb=memory_limit)
+    memory_limiter.start()
 
     logger.info(f"Starting TD3 training for {config.run.num_episodes} episodes")
     if config.run.render_mode == 'all':
@@ -583,7 +613,7 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
     MAINTENANCE_INTERVAL = 25  # Reduced from 100 to prevent memory fragmentation
 
     try:
-        with create_environments(config.run, config.environment) as env_bundle:
+        with create_environments(config.run, config.environment, set(config.video.record_episodes)) as env_bundle:
             # Stop signal file for external termination
             script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             stop_file = os.path.join(script_dir, ".stop_simulation")
@@ -607,33 +637,28 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                     if T.cuda.is_available():
                         T.cuda.empty_cache()
 
-                # Periodic memory monitoring
+                # Periodic memory monitoring and enforcement via MemoryLimiter
                 if completed_episodes > 0 and completed_episodes % MEMORY_LOG_INTERVAL == 0:
-                    memory_mb = get_memory_mb()
-                    logger.info(f"Memory usage at episode {completed_episodes}: {memory_mb:.1f} MB")
+                    memory_mb = memory_limiter.get_memory_mb()
+                    logger.info(f"Memory usage at episode {completed_episodes}: {memory_mb:.1f} MB ({memory_limiter.get_memory_percent():.1f}% of limit)")
 
-                # Memory threshold safeguard - check periodically (not every episode)
+                # Memory threshold safeguard - check periodically using MemoryLimiter
                 if completed_episodes > 0 and completed_episodes % MEMORY_CHECK_INTERVAL == 0:
-                    current_memory = get_memory_mb()
-                    if current_memory > MEMORY_LIMIT_MB:
-                        logger.warning(
-                            f"Memory threshold exceeded ({current_memory:.1f} MB > {MEMORY_LIMIT_MB} MB), "
-                            f"forcing garbage collection at episode {completed_episodes}"
-                        )
-                        gc.collect()
-                        if T.cuda.is_available():
-                            T.cuda.empty_cache()
-                        post_gc_memory = get_memory_mb()
-                        logger.info(f"Post-GC memory: {post_gc_memory:.1f} MB (freed {current_memory - post_gc_memory:.1f} MB)")
+                    is_critical = memory_limiter.check_and_cleanup()
+                    if is_critical:
+                        # Memory is critically high - save checkpoint and consider stopping
+                        logger.error(f"Critical memory pressure at episode {completed_episodes}!")
+                        _save_model_checkpoint(trainer, completed_episodes, options, sim_dir, is_final=False)
+                        # Continue but warn - the limiter has already done aggressive cleanup
 
-                # Determine if this episode should be rendered
+                # Determine if this episode should be rendered to screen (needs pygame)
                 should_render = completed_episodes in env_bundle.render_episodes and pygame_ctx is not None
 
                 # Determine if this episode should be recorded for video
+                # Recording can happen without screen display - just needs frames_dir
                 record_episode = (
                     completed_episodes in config.video.record_episodes
                     and options.frames_dir is not None
-                    and should_render  # Must be rendering to record frames
                 )
 
                 # Run episode (same logic for both rendered and unrendered)
@@ -691,13 +716,19 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
                 noise.reset()
                 completed_episodes += 1
 
-                # Batch completion handling
-                if completed_episodes % 100 == 0:
-                    batch_num = completed_episodes // 100
-                    output.print_batch_completed(batch_num, (batch_num - 1) * 100 + 1, completed_episodes, diagnostics)
+                # Explicit cleanup: delete result reference to allow GC
+                del result
+
+                # Batch completion handling (interval based on diagnostics batch size)
+                report_interval = options.diagnostics_batch_size * 2  # Report every 2 batches
+                if completed_episodes % report_interval == 0:
+                    batch_num = completed_episodes // options.diagnostics_batch_size
+                    start_ep = (batch_num - 2) * options.diagnostics_batch_size + 1
+                    output.print_batch_completed(batch_num, start_ep, completed_episodes, diagnostics)
                     _run_periodic_diagnostics(
                         reporter, diagnostics, charts_folder, text_folder,
-                        completed_episodes, output, open_charts=options.show_final_charts
+                        completed_episodes, output, open_charts=options.show_final_charts,
+                        batch_size=options.diagnostics_batch_size
                     )
                     if aggregate_writer:
                         aggregate_writer.maybe_write(completed_episodes, diagnostics)
@@ -754,7 +785,7 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
             if charts_folder is not None:
                 try:
                     chart_path = os.path.join(charts_folder, f"chart_final_{completed_episodes}.png")
-                    chart_gen = ChartGenerator(diagnostics, batch_size=50)
+                    chart_gen = ChartGenerator(diagnostics, batch_size=options.diagnostics_batch_size)
                     chart_gen.generate_to_file(chart_path)
                     logger.info(f"Final chart saved to {chart_path}")
                 except Exception as e:
@@ -763,7 +794,7 @@ def run_training(config: Config, options: Optional[TrainingOptions] = None) -> T
             # Show final chart if requested
             if options.show_final_charts and output.is_verbose():
                 try:
-                    chart_generator = ChartGenerator(diagnostics, batch_size=50)
+                    chart_generator = ChartGenerator(diagnostics, batch_size=options.diagnostics_batch_size)
                     chart_generator.generate_all(show=True, block=True)
                 except Exception as e:
                     logger.error(f"Failed to show final charts: {e}")

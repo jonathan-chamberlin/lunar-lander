@@ -113,22 +113,29 @@ class DiagnosticsTracker:
     unbounded memory growth. Statistics are computed incrementally as
     episodes complete, avoiding O(n) recomputation.
 
-    Memory efficient: ~78 bytes/episode vs ~368 bytes/episode with objects.
+    Memory efficient: Uses bounded deques for historical data with configurable
+    max_history_size to prevent unbounded memory growth during long training runs.
     """
 
-    def __init__(self, batch_size: int = 50) -> None:
+    # Maximum episodes to keep in historical lists (prevents memory leaks)
+    # 10000 episodes × ~50 bytes/episode = ~500KB max for history
+    DEFAULT_MAX_HISTORY = 10000
+
+    def __init__(self, batch_size: int = 50, max_history_size: int = None) -> None:
         self.batch_size = batch_size
+        self.max_history_size = max_history_size or self.DEFAULT_MAX_HISTORY
 
         # =====================================================================
-        # Per-episode primitive lists (for charting)
+        # Per-episode primitive deques (bounded for memory safety)
+        # Using deque with maxlen prevents unbounded growth
         # =====================================================================
-        self.env_rewards: List[float] = []
-        self.shaped_bonuses: List[float] = []
-        self.durations: List[float] = []
-        self.successes_bool: List[bool] = []
-        self.outcomes: List[str] = []
-        self.streak_history: List[int] = []
-        self.landed_env_rewards: List[float] = []  # Only for landed episodes
+        self.env_rewards: deque = deque(maxlen=self.max_history_size)
+        self.shaped_bonuses: deque = deque(maxlen=self.max_history_size)
+        self.durations: deque = deque(maxlen=self.max_history_size)
+        self.successes_bool: deque = deque(maxlen=self.max_history_size)
+        self.outcomes: deque = deque(maxlen=self.max_history_size)
+        self.streak_history: deque = deque(maxlen=self.max_history_size)
+        self.landed_env_rewards: deque = deque(maxlen=self.max_history_size)  # Only for landed episodes
 
         # =====================================================================
         # Running statistics (incremental, no recomputation)
@@ -192,17 +199,18 @@ class DiagnosticsTracker:
 
         # =====================================================================
         # Training metrics (recorded periodically, not every episode)
+        # Bounded to prevent memory growth during long runs
         # =====================================================================
-        self.q_values: List[float] = []
-        self.actor_losses: List[float] = []
-        self.critic_losses: List[float] = []
-        self.actor_grad_norms: List[float] = []
-        self.critic_grad_norms: List[float] = []
+        self.q_values: deque = deque(maxlen=self.max_history_size)
+        self.actor_losses: deque = deque(maxlen=self.max_history_size)
+        self.critic_losses: deque = deque(maxlen=self.max_history_size)
+        self.actor_grad_norms: deque = deque(maxlen=self.max_history_size)
+        self.critic_grad_norms: deque = deque(maxlen=self.max_history_size)
 
         # =====================================================================
-        # Speed metrics per batch
+        # Speed metrics per batch (bounded)
         # =====================================================================
-        self.batch_speed_metrics: List[BatchSpeedMetrics] = []
+        self.batch_speed_metrics: deque = deque(maxlen=self.max_history_size // batch_size + 1)
 
         # Pre-compute behavior sets for fast lookup
         self._good_behaviors_set: Set[str] = set(QUALITY_BEHAVIORS['good'])
@@ -437,7 +445,7 @@ class DiagnosticsTracker:
         Returns:
             Tuple of (env_rewards, shaped_bonuses) lists
         """
-        return self.env_rewards, self.shaped_bonuses
+        return list(self.env_rewards), list(self.shaped_bonuses)
 
     def get_success_data(self) -> Tuple[List[float], List[bool]]:
         """Get success rate data for charts.
@@ -445,7 +453,7 @@ class DiagnosticsTracker:
         Returns:
             Tuple of (batch_success_rates, successes_bool) lists
         """
-        return self.batch_success_rates, self.successes_bool
+        return self.batch_success_rates, list(self.successes_bool)
 
     def get_outcome_distribution_per_batch(self) -> List[Dict[str, float]]:
         """Get pre-computed outcome distributions per batch.
@@ -469,7 +477,7 @@ class DiagnosticsTracker:
         Returns:
             Tuple of (streak_history, max_streak, max_streak_episode)
         """
-        return self.streak_history, self.max_streak, self.max_streak_episode
+        return list(self.streak_history), self.max_streak, self.max_streak_episode
 
     def get_duration_data(self) -> List[float]:
         """Get episode durations for charts.
@@ -477,7 +485,7 @@ class DiagnosticsTracker:
         Returns:
             List of episode durations in seconds
         """
-        return self.durations
+        return list(self.durations)
 
     def get_report_card_data(self) -> Tuple[Dict[str, float], Dict[str, float]]:
         """Get first 100 vs last 100 behavior frequencies for report card.
@@ -513,7 +521,7 @@ class DiagnosticsTracker:
         Returns:
             List of env_rewards for episodes that landed
         """
-        return self.landed_env_rewards
+        return list(self.landed_env_rewards)
 
     def get_summary(self) -> DiagnosticsSummary:
         """Compute summary statistics from incremental metrics.
@@ -539,8 +547,11 @@ class DiagnosticsTracker:
         mean_reward = self._reward_sum / num_episodes
         final_50_mean = None
         if num_episodes >= 50:
-            # Compute from primitive lists (last 50 only)
-            recent_rewards = [e + s for e, s in zip(self.env_rewards[-50:], self.shaped_bonuses[-50:])]
+            # Compute from deques (last 50 only) - use islice for deque compatibility
+            from itertools import islice
+            env_list = list(self.env_rewards)
+            shaped_list = list(self.shaped_bonuses)
+            recent_rewards = [e + s for e, s in zip(env_list[-50:], shaped_list[-50:])]
             final_50_mean = float(np.mean(recent_rewards))
 
         # Training statistics
@@ -672,7 +683,7 @@ class DiagnosticsTracker:
             'max_streak': self.max_streak,
             'max_streak_episode': self.max_streak_episode,
             'current_streak': self.current_streak,
-            'streaks': self.streak_history,
+            'streaks': list(self.streak_history),
             'streak_breaks': []  # Not tracked to avoid object storage
         }
 
@@ -685,7 +696,7 @@ class DiagnosticsTracker:
         if not self.landed_env_rewards:
             return {}
 
-        landed_rewards = self.landed_env_rewards
+        landed_rewards = list(self.landed_env_rewards)
         landed_arr = np.array(landed_rewards)
 
         stats = {
@@ -730,7 +741,8 @@ class DiagnosticsTracker:
 
         # 2. Recent vs overall comparison (last 100 vs all)
         if n >= 100:
-            recent_env_rewards = self.env_rewards[-100:]
+            env_list = list(self.env_rewards)
+            recent_env_rewards = env_list[-100:]
             recent_successes = sum(self._last_100_successes)
             stats['recent_100'] = {
                 'env_reward_mean': float(np.mean(recent_env_rewards)),
@@ -758,7 +770,8 @@ class DiagnosticsTracker:
         # 6. Best recent streak (from streak_history if long enough)
         if n >= 50:
             lookback = min(200, n)
-            recent_streaks = self.streak_history[-lookback:]
+            streak_list = list(self.streak_history)
+            recent_streaks = streak_list[-lookback:]
             stats['max_streak_last_200'] = max(recent_streaks) if recent_streaks else 0
 
         # 7. Landing quality for successful episodes
@@ -790,20 +803,20 @@ class DiagnosticsTracker:
     def to_dict(self) -> Dict[str, Any]:
         """Convert tracked data to a dictionary for serialization."""
         return {
-            'env_rewards': self.env_rewards,
-            'shaped_bonuses': self.shaped_bonuses,
-            'durations': self.durations,
-            'successes_bool': self.successes_bool,
-            'outcomes': self.outcomes,
-            'streak_history': self.streak_history,
+            'env_rewards': list(self.env_rewards),
+            'shaped_bonuses': list(self.shaped_bonuses),
+            'durations': list(self.durations),
+            'successes_bool': list(self.successes_bool),
+            'outcomes': list(self.outcomes),
+            'streak_history': list(self.streak_history),
             'total_episodes': self.total_episodes,
             'success_count': self.success_count,
             'max_streak': self.max_streak,
-            'q_values': self.q_values,
-            'actor_losses': self.actor_losses,
-            'critic_losses': self.critic_losses,
-            'actor_grad_norms': self.actor_grad_norms,
-            'critic_grad_norms': self.critic_grad_norms
+            'q_values': list(self.q_values),
+            'actor_losses': list(self.actor_losses),
+            'critic_losses': list(self.critic_losses),
+            'actor_grad_norms': list(self.actor_grad_norms),
+            'critic_grad_norms': list(self.critic_grad_norms)
         }
 
     def to_chart_data(self) -> Dict[str, Any]:
@@ -820,15 +833,15 @@ class DiagnosticsTracker:
             'total_episodes': self.total_episodes,
             'batch_size': self.batch_size,
 
-            # Per-episode data (for reward chart, duration chart)
-            'env_rewards': self.env_rewards,
-            'shaped_bonuses': self.shaped_bonuses,
-            'durations': self.durations,
-            'successes_bool': self.successes_bool,
-            'outcomes': self.outcomes,
+            # Per-episode data (for reward chart, duration chart) - convert deques to lists
+            'env_rewards': list(self.env_rewards),
+            'shaped_bonuses': list(self.shaped_bonuses),
+            'durations': list(self.durations),
+            'successes_bool': list(self.successes_bool),
+            'outcomes': list(self.outcomes),
 
             # Streak data (for streak chart)
-            'streak_history': self.streak_history,
+            'streak_history': list(self.streak_history),
             'max_streak': self.max_streak,
             'max_streak_episode': self.max_streak_episode,
             'first_success_episode': self.first_success_episode,
@@ -839,7 +852,7 @@ class DiagnosticsTracker:
             'batch_behavior_frequencies': self.batch_behavior_frequencies,
 
             # Landing histogram data
-            'landed_env_rewards': self.landed_env_rewards,
+            'landed_env_rewards': list(self.landed_env_rewards),
 
             # Report card data (first 100 vs last 100)
             'first_100_behavior_freqs': first_100_freqs,
@@ -849,12 +862,12 @@ class DiagnosticsTracker:
             'success_count': self.success_count,
             'success_rate': self.success_count / self.total_episodes * 100 if self.total_episodes > 0 else 0.0,
 
-            # Training metrics
-            'q_values': self.q_values,
-            'actor_losses': self.actor_losses,
-            'critic_losses': self.critic_losses,
-            'actor_grad_norms': self.actor_grad_norms,
-            'critic_grad_norms': self.critic_grad_norms,
+            # Training metrics - convert deques to lists
+            'q_values': list(self.q_values),
+            'actor_losses': list(self.actor_losses),
+            'critic_losses': list(self.critic_losses),
+            'actor_grad_norms': list(self.actor_grad_norms),
+            'critic_grad_norms': list(self.critic_grad_norms),
         }
 
 

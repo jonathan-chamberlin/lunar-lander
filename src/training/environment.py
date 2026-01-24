@@ -31,29 +31,39 @@ class EnvironmentBundle:
 @contextmanager
 def create_environments(
     run_config: RunConfig,
-    env_config: EnvironmentConfig
+    env_config: EnvironmentConfig,
+    record_episodes: Set[int] = None
 ) -> Generator[EnvironmentBundle, None, None]:
     """Context manager for creating and managing Gymnasium environment.
 
     Creates a single environment for training. If render_mode is 'all' or 'custom',
-    the environment is created with rgb_array rendering. If 'none', no rendering.
+    the environment is created with rgb_array rendering. If 'none', no rendering
+    UNLESS there are episodes to record (then rgb_array is needed for frame capture).
 
     Args:
         run_config: Configuration for training runs
         env_config: Environment configuration
+        record_episodes: Set of episodes to record (from VideoConfig)
 
     Yields:
         EnvironmentBundle containing the training environment
     """
     should_render = run_config.render_mode != 'none'
+    has_record_episodes = record_episodes is not None and len(record_episodes) > 0
 
     # Create environment with appropriate render mode
-    if should_render:
+    # Need rgb_array if: displaying to screen OR recording episodes
+    needs_rgb_array = should_render or has_record_episodes
+
+    if needs_rgb_array:
         env = gym.make(env_config.env_name, render_mode="rgb_array",
                        max_episode_steps=env_config.max_episode_steps)
         if run_config.framerate is not None:
             env.metadata["render_fps"] = run_config.framerate
-        logger.info(f"Created environment with rgb_array rendering (max_steps={env_config.max_episode_steps})")
+        if has_record_episodes and not should_render:
+            logger.info(f"Created environment with rgb_array rendering for video recording only (max_steps={env_config.max_episode_steps})")
+        else:
+            logger.info(f"Created environment with rgb_array rendering (max_steps={env_config.max_episode_steps})")
     else:
         env = gym.make(env_config.env_name, max_episode_steps=env_config.max_episode_steps)
         logger.info(f"Created environment without rendering (max_steps={env_config.max_episode_steps})")

@@ -39,3 +39,11 @@ class TrainingOptions:
 
     # Model loading for multi-phase training
     load_model_path: Optional[Path] = None  # Path to pre-trained model to continue from
+
+    # Chart reporting batch size (episodes per batch in charts/diagnostics)
+    diagnostics_batch_size: int = 50  # Default: 50 episodes per batch
+
+    # Memory limit in MB (prevents system-wide memory exhaustion)
+    # Default 4000 MB (4GB) leaves room for browser and other apps
+    # Set to None to use auto-detected limit based on system memory
+    memory_limit_mb: Optional[int] = 4000

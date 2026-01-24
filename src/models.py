@@ -23,6 +23,10 @@ class EpisodeData:
 
     Groups all the data collected during an episode that needs to be
     recorded and analyzed.
+
+    Note: actions_array and observations_array are used only for behavior
+    analysis and should be cleared immediately after use to prevent memory
+    accumulation during long training runs.
     """
     episode_num: int
     total_reward: float
@@ -30,11 +34,17 @@ class EpisodeData:
     shaped_bonus: float
     steps: int
     duration_seconds: float
-    actions_array: np.ndarray
-    observations_array: np.ndarray
     terminated: bool
     truncated: bool
+    # Arrays for behavior analysis - made Optional to allow clearing after use
+    actions_array: Optional[np.ndarray] = None
+    observations_array: Optional[np.ndarray] = None
     rendered: bool = False
+
+    def clear_arrays(self) -> None:
+        """Clear trajectory arrays to free memory. Call after behavior analysis."""
+        self.actions_array = None
+        self.observations_array = None
 
 
 @dataclass
