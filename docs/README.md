@@ -8,5 +8,8 @@ Video files: C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\exper
 
 Model: C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\experiments\EXP_024_long_training_with_recording\results\models\exp024_model.pt
 
+Good video example of model learning at  C:\Repositories for Git\lunar-lander-file-folder\lunar-lander\experiments\EXP_023_long_training_with_recording\many_episodes.mp4 When the simulation runs longer it ends up landing cleanly and not doing the bouncing behavior shown around run 4000.
 
-I discovered a recording but where there are frames for more than one episode in an expiriment's frames>episode_XXXX folder
+I discovered a recording bug where there are frames for more than one episode in an expiriment's frames>episode_XXXX folder
+
+
