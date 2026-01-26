@@ -563,11 +563,12 @@ class DiagnosticsTracker:
         mean_critic_grad = None
 
         if self.q_values:
-            mean_q = float(np.mean(self.q_values))
-            if len(self.q_values) >= 10:
+            q_values_list = list(self.q_values)
+            mean_q = float(np.mean(q_values_list))
+            if len(q_values_list) >= 10:
                 q_trend = (
-                    float(np.mean(self.q_values[:10])),
-                    float(np.mean(self.q_values[-10:]))
+                    float(np.mean(q_values_list[:10])),
+                    float(np.mean(q_values_list[-10:]))
                 )
             mean_actor_loss = float(np.mean(self.actor_losses))
             mean_critic_loss = float(np.mean(self.critic_losses))

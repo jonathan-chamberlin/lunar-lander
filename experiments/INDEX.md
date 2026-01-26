@@ -30,14 +30,16 @@ Quick reference for all experiments. Update this file when creating or concludin
 | EXP_013 | Gamma Sweep | CONCLUDED | gamma=0.99 optimal (64.5%); 0.9 catastrophic (0%); higher gammas increase variance | 2026-01-22 |
 | EXP_017 | Noise Decay Sweep | CONCLUDED | decay=100 hurts (10%); 200-500 similar (~28%); default 300 fine | 2026-01-22 |
 | EXP_022 | Exploitation Phases - Hunt for 100 Consecutive | CONCLUDED | **101 consecutive successes** at ep 5336; noise decay to 0 enables streaks | 2026-01-23 |
+| EXP_023 | Long Training with Video Recording | PLANNED | Replication of EXP_022 with video | 2026-01-23 |
+| EXP_024 | Long Training with Video Recording | RUNNING | Replication of EXP_023 | 2026-01-24 |
 
 ## Quick Stats
 
-- **Total experiments:** 14
+- **Total experiments:** 16
 - **Concluded:** 12
 - **Completed:** 1
-- **Planned:** 0
-- **Running:** 0
+- **Planned:** 1
+- **Running:** 1
 
 ## Best Known Parameters
 
